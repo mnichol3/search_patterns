@@ -1,0 +1,34 @@
+{
+    "H-65": {
+        "name": "H-65",
+        "category": "helicopter",
+        "endurance": 210,
+        "range": 375,
+        "radius": 120,
+        "radar": "AN/APS-215"
+    },
+    "H-60": {
+        "name": "H-60",
+        "category": "helicopter",
+        "endurance": 360,
+        "range": 700,
+        "radius": 300,
+        "radar": "AN/APS-215"
+    },
+    "HC-130J": {
+        "name": "HC-130J",
+        "category": "fixed-wing",
+        "endurance": 1500,
+        "range": 5251,
+        "radius": 2283,
+        "radar": "AN/APS-137"
+    },
+    "HC-144": {
+        "name": "HC-144",
+        "category": "fixed-wing",
+        "endurance": 660,
+        "range": 2000,
+        "radius": 880,
+        "radar": "AN/APS-137"
+    }
+}
