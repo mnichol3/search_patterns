@@ -1,4 +1,13 @@
 from functools import wraps
+from statistics import mean
+
+
+def get_coord_mean(coords: list[tuple[float, float]]) -> tuple[float, float]:
+    """Get the mean x- and y-coordinate values from a list of x- and
+    y-coordinate tuples."""
+    lons, lats = list(zip(*coords))
+
+    return mean(lons), mean(lats)
 
 
 def round_return(decimals=2):
@@ -10,7 +19,7 @@ def round_return(decimals=2):
         Number of digits to round to. Default is 2.
     """
     def decorator(func):
-        @functools.wraps(func)
+        @wraps(func)
         def wrapper(*args, **kwargs):
             result = func(*args, **kwargs)
 

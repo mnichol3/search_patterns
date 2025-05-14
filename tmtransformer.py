@@ -4,6 +4,9 @@ from typing import List, Tuple, Union
 
 from pyproj import CRS, Transformer
 
+from mathlib import arctan, sin, tan
+from util import round_return
+
 
 Point = Tuple[float, float]
 
@@ -44,17 +47,27 @@ class TMTransformer:
         self.ellps = ellps
         self.x_0 = x_0
         self.y_0 = y_0
-        self.crs = {
-            'tmerc': CRS.from_proj4(self._get_proj_str()),
-            'geodetic': CRS.from_epsg(4326),
-        }
-        self.transformers = {
-            'to_tmerc': Transformer.from_crs(
-                self.crs['geodetic'], self.crs['tmerc'], always_xy=True),
-            'from_tmerc': Transformer.from_crs(
-                self.crs['tmerc'], self.crs['geodetic'], always_xy=True),
-        }
+        self.transformers = self._init_transformers()
 
+    @round_return(4)
+    def calc_convergence(self, point: Point) -> float:
+        """Compute the convergence angle given a longitude and latitude
+        coordinate pair.
+
+        Parameters
+        ----------
+        point: Point
+            Longitude and latitude coordiante pair, in decimal degrees.
+
+        Returns
+        -------
+        float
+            Convergence angle, in degrees.
+        """
+        lon, lat = point
+        return arctan(tan(lon - self.lon_0) * sin(lat)).item()
+
+    @round_return(8)
     def fwd(
         self,
         coords: Union[Point, List[Point]],
@@ -72,8 +85,9 @@ class TMTransformer:
         tuple[float, float] or list[tuple[float, float]]
             Transformed transverse mercator coordinates.
         """
-        return self.transformers['to_tmerc'].transform(*self._get_xy(coords))
+        return self.transformers['fwd'].transform(*self._get_xy(coords))
 
+    @round_return(8)
     def inv(
         self,
         coords: Union[Point, List[Point]],
@@ -91,12 +105,24 @@ class TMTransformer:
         tuple[float, float] or list[tuple[float, float]]
             Transformed geodetic longitude & latitude coordinates.
         """
-        return self.transformers['from_tmerc'].transform(*self._get_xy(coords))
+        return self.transformers['inv'].transform(*self._get_xy(coords))
 
     def _get_proj_str(self) -> str:
         """Construct the transverse mercator proj CRS string."""
         return (f'+proj=tmerc +lon_0={self.lon_0} +k_0={self.k_0}'
                 f' +x_0={self.x_0} +y_0={self.y_0} +ellps={self.ellps}')
+
+    def _init_transformers(self) -> dict:
+        """Initialize pyproj transformers."""
+        crs_tmerc = CRS.from_proj4(self._get_proj_str())
+        crs_geodeic = CRS.from_epsg(4326)
+
+        return {
+            'fwd': Transformer.from_crs(
+                crs_geodeic, crs_tmerc, always_xy=True),
+            'inv': Transformer.from_crs(
+                crs_tmerc, crs_geodeic, always_xy=True),
+        }
 
     def _get_xy(
         self,

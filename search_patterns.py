@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from copy import deepcopy
 
 import pandas as pd
@@ -24,15 +25,19 @@ class BaseSearchPattern:
         self.csp = csp
         self.waypoints = None
 
-    def to_dataframe(self, utm_zone: UTMZone | None = None) -> pd.DataFrame:
+    def to_dataframe(
+        self,
+        transformer: Callable | None = None,
+    ) -> pd.DataFrame:
         """Return the search pattern as a dataframe.
 
         Parameters
         ----------
         utm_zone: UTMZone, optional
-            If passed, the coordinates will be projected from UTM to geodetic
-            longitude & latitude and distances will be given in nautical miles.
-            Default is None, meaning the coordinates will stay in UTM and
+            If passed, the coordinates will be projected from transverse
+            mercator to geodetic longitude & latitude and distances will be
+            given in nautical miles.
+            Default is None, meaning the coordinates will stay in TM and
             distances will be given in meters.
 
         Returns
@@ -46,6 +51,9 @@ class BaseSearchPattern:
         def _geod_dist(p1: tuple[float, float], p2: tuple[float, float]):
             return geod.inv(*p1, *p2)[-1] * M_2_NMI
 
+        if len(self.waypoints) == 0:
+            raise ValueError(f'Waypoints list is empty.')
+
         columns = [
             'lon',
             'lat',
@@ -57,8 +65,8 @@ class BaseSearchPattern:
         dist_func = _eucl_dist
         waypoints = deepcopy(self.waypoints)
 
-        if utm_zone:
-            waypoints = utm_zone.utm_to_geodetic(waypoints)
+        if transformer:
+            waypoints = transformer(waypoints)
             geod = Geod(ellps='WGS84')
             dist_func = _geod_dist
 
