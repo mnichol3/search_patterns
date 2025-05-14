@@ -5,12 +5,15 @@ from typing import Iterable, TypeAlias
 import numpy as np
 import utm
 
-from mathlib import sin, tan
+from mathlib import arctan, sin, tan
+
 
 Point: TypeAlias = tuple[float, float]
 
 
 class UTMZone:
+    """Class for transforming coordinates to and from universal transverse
+    mercator projection."""
 
     def __init__(
         self,
@@ -20,8 +23,8 @@ class UTMZone:
     ):
         """Instantiate a new UTMZone object.
 
-        Paramters
-        ---------
+        Parameters
+        ----------
         number: int
             UTM zone number.
         letter: str
@@ -37,7 +40,7 @@ class UTMZone:
 
     @property
     def zone(self) -> str:
-        """Return the zone number of letter as a string."""
+        """Return the zone number and letter as a string."""
         return f'{self.number}{self.letter}'
 
     def calc_convergence(self, point: Point) -> float:
@@ -47,7 +50,7 @@ class UTMZone:
         Parameters
         ----------
         point: Point
-            Longitude and latitude coordiante pair, in decimal degrees.
+            Longitude and latitude coordinate pair, in decimal degrees.
 
         Returns
         -------
@@ -55,17 +58,15 @@ class UTMZone:
             Convergence angle, in degrees.
         """
         lon, lat = point
-        c_rad = np.arctan(tan(lon - self.central_longitude) * sin(lat))
-
-        return np.degrees(c_rad)
+        return arctan(tan(lon - self.central_longitude) * sin(lat))
 
     def set_convergence(self, point: Point):
-        """Set thje instance convergence angle.
+        """Set the instance convergence angle.
 
         Parameters
         ----------
         point: Point
-            Longitude and latitude coordiante pair, in decimal degrees.
+            Longitude and latitude coordinate pair, in decimal degrees.
 
         Returns
         -------
@@ -73,10 +74,7 @@ class UTMZone:
         """
         self.convergence = self.calc_convergence(point)
 
-    def geodetic_to_utm(
-        self,
-        points: Point | Iterable[Point],
-    ) -> Point | list[Point]:
+    def fwd(self, points: Point | Iterable[Point]) -> Point | list[Point]:
         """Project geodetic longitude & latitude coordinate pairs to UTM.
 
         Parameters
@@ -97,10 +95,7 @@ class UTMZone:
 
         return list(zip(x.tolist(), y.tolist()))
 
-    def utm_to_geodetic(
-        self,
-        points: Point | Iterable[Point],
-    ) -> Point | list[Point]:
+    def inv(self, points: Point | Iterable[Point]) -> Point | list[Point]:
         """Project UTM x- and y-coordinates to geodetic longitude & latitude.
 
         Parameters
@@ -151,7 +146,7 @@ class UTMZone:
     @classmethod
     def _format_coords(cls, coords: Point | Iterable[Point]) -> tuple:
         """Format coordinate pairs into two numpy arrays."""
-        if isinstance(coords, list) or isinstance(coords, tuple):
+        if isinstance(coords, (list, tuple)):
             points = np.array(coords)
 
         return points.T
