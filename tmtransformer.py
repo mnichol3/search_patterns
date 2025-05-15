@@ -14,7 +14,15 @@ Point = Tuple[float, float]
 
 class TMTransformer:
     """Class for transforming geodetic longitude & latitude coordinates
-    to a custom transverse mercator projection and vice versa."""
+    to a custom transverse mercator projection and vice versa.
+
+    Example usage
+    -------------
+    >>> point = (-121.650942,  32.815256)
+    >>> xfr = TMTransformer.from_lonlat(*point)
+    >>> x, y = xfr.fwd(point)
+    >>> lon, lat = xfr.inv((x, y))
+    """
 
     def __init__(
         self,
@@ -58,7 +66,7 @@ class TMTransformer:
         Parameters
         ----------
         point: Point
-            Longitude and latitude coordiante pair, in decimal degrees.
+            Longitude and latitude coordinate pair, in decimal degrees.
 
         Returns
         -------
@@ -177,12 +185,3 @@ class TMTransformer:
     def __repr__(self) -> str:
         """Return a string representation of the object."""
         return f'<{self.__class__.__name__} ({self.lon_0}, {self.lat_0})>'
-
-
-if __name__ == '__main__':
-    point = (-121.650942,  32.815256)
-
-    xfr = TMTransformer.from_lonlat(*point)
-
-    x, y = xfr.fwd(point)
-    lon, lat = xfr.inv((x, y))
