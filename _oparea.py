@@ -253,7 +253,7 @@ class BaseOpArea(ABC):
             raise ValueError('Commence search point is outside OpArea.')
 
         search = SectorSearch(proj_csp)
-        search.run(radius*NMI_2_M, orientation, n_patterns)
+        search.run(orientation, radius*NMI_2_M, n_patterns)
         self.patterns[unit_id] = search.to_dataframe(self.transform_inv)
 
     def to_kml(

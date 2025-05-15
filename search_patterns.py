@@ -171,18 +171,18 @@ class SectorSearch(BaseSearchPattern):
 
     def run(
         self,
-        radius: int,
         first_course: int,
+        radius: int,
         n_patterns: int = 1,
     ) -> list[tuple[float, float]]:
         """Generate the sector search pattern.
 
         Parameters
         ----------
-        radius: float
-            Radius, in meters.
         first_course: int
             Course of the first leg, in degrees.
+        radius: float
+            Radius, in meters.
         n_patterns: int, optional
             Number of patterns to generate, by default 1.
 

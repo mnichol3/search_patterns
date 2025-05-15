@@ -41,13 +41,13 @@ oparea = TMOpArea.from_datum(datum, 30, 15, 15)
 #     first_course=0,
 # )
 
-oparea.generate_sector_search(datum, 90, 3, 'SCORE31')
-oparea.generate_expanding_square_search(
-    datum,
-    90,
-    3,
-    'SCORE32',
-)
+oparea.generate_sector_search(datum, 15, 3, 'SCORE31')
+# oparea.generate_expanding_square_search(
+#     datum,
+#     90,
+#     3,
+#     'SCORE32',
+# )
 
 oparea.to_kml(
     r'C:\Users\mnicholson\code\etc\misc\oparea.kml',
