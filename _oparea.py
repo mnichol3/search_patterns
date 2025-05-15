@@ -211,8 +211,7 @@ class BaseOpArea(ABC):
 
         start_vert, _ = self.get_nearest_vertex(self.transform_fwd(csp))
 
-        search = ParallelTrackSearch(
-            self.polygon, start_vert.coords, self.convergence)
+        search = ParallelTrackSearch(self.polygon, start_vert.coords)
 
         if first_course is None:
             first_course = _get_leg_course()
@@ -223,8 +222,8 @@ class BaseOpArea(ABC):
     def generate_sector_search(
         self,
         csp: tuple[float, float],
-        radius: int,
         orientation: int,
+        radius: int,
         unit_id: str,
         n_patterns: int = 1,
     ) -> any:
@@ -234,10 +233,10 @@ class BaseOpArea(ABC):
         ----------
         csp: tuple[float, float]
             Longitude and latitude coordinates of the commence search point.
-        radius: int
-            Pattern radius, in nautical miles.
         orientation: int
             Pattern orientatin, in degrees.
+        radius: int
+            Pattern radius, in nautical miles.
         unit_id: str
             ID of the unit to conduct the search.
         n_patterns : int, optional
@@ -253,7 +252,7 @@ class BaseOpArea(ABC):
         if not self.contains_properly(Point(*proj_csp)):
             raise ValueError('Commence search point is outside OpArea.')
 
-        search = SectorSearch(proj_csp, self.convergence)
+        search = SectorSearch(proj_csp)
         search.run(radius*NMI_2_M, orientation, n_patterns)
         self.patterns[unit_id] = search.to_dataframe(self.transform_inv)
 

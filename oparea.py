@@ -8,14 +8,13 @@ from typing import TypeAlias, TYPE_CHECKING
 import numpy as np
 from shapely import Geometry, Point, Polygon, STRtree
 
-from cartesian import azimuth, calc_azimuth, calc_fwd, get_min_azimuth_diff
+from cartesian import calc_azimuth, get_min_azimuth_diff
 from dubins import DubinsPath
 from edge import Edge
 from mathlib import cos, sin, NMI_2_M
 from mercator import UTMZone
 from search_patterns import ExpandingSquare, ParallelTrackSearch, SectorSearch
 from vertex import Vertex
-#from utm_zone import UTMZone
 
 try:
     import simplekml
@@ -205,7 +204,7 @@ class OpArea:
         radius: int
             Pattern radius, in nautical miles.
         orientation: int
-            Pattern orientatin, in degrees.
+            Pattern orientation, in degrees.
         unit_id: str
             ID of the unit to conduct the search.
         n_patterns : int, optional

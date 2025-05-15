@@ -23,7 +23,7 @@ major_axis = 15
 oparea = OpArea.from_datum(last_known, length, width, major_axis)
 
 #import pdb; pdb.set_trace()
-oparea.generate_sector_search(last_known, 1.25, 90, f'{helo}-01', n_patterns=1)
+oparea.generate_sector_search(last_known, 90, 1.25, f'{helo}-01', n_patterns=1)
 #oparea.generate_parallel_track_search(helo_csp, 90, 0.5, f'{helo}-02')
 oparea.generate_expanding_square_search(last_known, 135, 1, f'{helo}-03')
 oparea.to_kml(

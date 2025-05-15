@@ -21,7 +21,7 @@ def get_mean_lonlat(coords: list[tuple[float, float]]) -> tuple[float, float]:
 #     (-60.65351740813868, 40.51486150081292),
 # ]
 
-datum = (-68.722859, 41.417429)
+datum = (-68.125874,  41.788893)
 
 # Append first coordinate to end for closure
 #coords.append(coords[0])
@@ -41,6 +41,7 @@ oparea = TMOpArea.from_datum(datum, 30, 15, 15)
 #     first_course=0,
 # )
 
+oparea.generate_sector_search(datum, 90, 3, 'SCORE31')
 oparea.generate_expanding_square_search(
     datum,
     90,
@@ -48,17 +49,9 @@ oparea.generate_expanding_square_search(
     'SCORE32',
 )
 
-# oparea.to_kml(
-#     r'C:\Users\mnicholson\code\etc\misc\oparea.kml',
-#     'TestOpArea',
-#     fill='orange',
-#     doc_name = 'CASE-20250504-002',
-# )
-
-from search_patterns import ExpandingSquare
-square = ExpandingSquare(datum)
-waypoints = square.run(30, 3)
-
-x, y = list(zip(*waypoints))
-plt.plot(x, y)
-plt.show()
+oparea.to_kml(
+    r'C:\Users\mnicholson\code\etc\misc\oparea.kml',
+    'TestOpArea',
+    fill='orange',
+    doc_name = 'CASE-20250504-002',
+)
