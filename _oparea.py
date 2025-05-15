@@ -12,9 +12,9 @@ from shapely import Geometry, Point, Polygon, STRtree
 from cartesian import azimuth, calc_azimuth, calc_fwd, get_min_azimuth_diff
 from dubins import DubinsPath
 from edge import Edge
-from mathlib import NMI_2_M
+from mathlib import cos, sin, NMI_2_M
 from mercator import UTMZone
-from search_patterns import ParallelTrackSearch, SectorSearch
+from search_patterns import ExpandingSquare, ParallelTrackSearch, SectorSearch
 from tmtransformer import TMTransformer
 from util import get_coord_mean
 from vertex import Vertex
@@ -118,6 +118,43 @@ class BaseOpArea(ABC):
 
         return vert, dist
 
+    def generate_expanding_square_search(
+        self,
+        csp: tuple[float, float],
+        first_course: int,
+        d: float,
+        unit_id: str,
+        num_legs: int = 12,
+        turn_dir: int = -1,
+    ) -> any:
+        """Generate the sector search pattern.
+
+        Parameters
+        ----------
+        csp: tuple[float, float]
+            Longitude and latitude coordinates of the commence search point.
+        first_course: int
+            Course of the first leg of the pattern.
+        d: float
+            Initial leg length, in nautical miles.
+        unit_id: str
+            Name of the unit assigned to the pattern.
+        num_legs: int, optional
+            Number of legs. Default is 12.
+        turn_dir: int, optional
+            Turn direction. 1 for right, -1 for left. Default is -1.
+
+        Returns
+        -------
+        list[tuple[float, float]]
+            Pattern waypoints.
+        """
+        d *= NMI_2_M
+
+        search = ExpandingSquare(self.transform_fwd(csp))
+        search.run(first_course, d, num_legs=num_legs, turn_dir=turn_dir)
+        self.patterns[unit_id] = search.to_dataframe(self.transform_inv)
+
     def generate_parallel_track_search(
         self,
         csp: tuple[float, float],
@@ -211,12 +248,12 @@ class BaseOpArea(ABC):
         list[tuple[float, float]]
             Pattern waypoints.
         """
-        utm_csp = self.utm_zone.geodetic_to_utm(csp)
+        proj_csp = self.transform_fwd(csp)
 
-        if not self.contains_properly(Point(*utm_csp)):
+        if not self.contains_properly(Point(*proj_csp)):
             raise ValueError('Commence search point is outside OpArea.')
 
-        search = SectorSearch(utm_csp, self.convergence)
+        search = SectorSearch(proj_csp, self.convergence)
         search.run(radius*NMI_2_M, orientation, n_patterns)
         self.patterns[unit_id] = search.to_dataframe(self.transform_inv)
 
@@ -348,7 +385,6 @@ class BaseOpArea(ABC):
         return self.polygon.intersects(geom)
 
     @classmethod
-    @abstractmethod
     def from_datum(
         cls,
         centroid: CoordPair,
@@ -460,7 +496,7 @@ class TMOpArea(BaseOpArea):
     @property
     def convergence(self) -> float:
         """Return the convergence angle."""
-        return 1.0
+        return 0.0
 
     def transform_fwd(self, coords: list[CoordPair]) -> list[CoordPair]:
         """Perform a forward coordinate system transform.
@@ -533,15 +569,24 @@ class TMOpArea(BaseOpArea):
         width *= NMI_2_M
 
         transformer = TMTransformer.from_lonlat(*centroid)
+        cx, cy = transformer.fwd(centroid)
 
-        c_x, c_y = transformer.fwd(centroid)
+        dx = length / 2
+        dy = width / 2
 
-        hyp = np.sqrt((length / 2)**2 + (width /2)**2)
-        ang = np.degrees(np.arctan2(width / 2, length / 2))
+        major_axis_azimuth = 90 - major_axis_azimuth
 
-        for d in [ang, 180 - ang, 180 + ang, -ang]:
-            azi = azimuth(major_axis_azimuth + d)
-            vertices.append(calc_fwd((c_x, c_y), azi, hyp))
+        ux = cos(major_axis_azimuth)
+        uy = sin(major_axis_azimuth)
+        vx = -sin(major_axis_azimuth)
+        vy = cos(major_axis_azimuth)
+
+        vertices = [
+            (cx + dx * ux + dy * vx, cy + dx * uy + dy * vy),
+            (cx - dx * ux + dy * vx, cy - dx * uy + dy * vy),
+            (cx - dx * ux - dy * vx, cy - dx * uy - dy * vy),
+            (cx + dx * ux - dy * vx, cy + dx * uy - dy * vy),
+        ]
 
         return TMOpArea(vertices, major_axis_azimuth, transformer=transformer)
 
@@ -633,13 +678,23 @@ class UTMOpArea(BaseOpArea):
         width *= NMI_2_M
 
         utm_zone = UTMZone.from_lonlat(centroid)
-        c_x, c_y = utm_zone.geodetic_to_utm(centroid)
+        cx, cy = utm_zone.geodetic_to_utm(centroid)
 
-        hyp = np.sqrt((length / 2)**2 + (width /2)**2)
-        ang = np.degrees(np.arctan2(width / 2, length / 2))
+        dx = length / 2
+        dy = width / 2
 
-        for d in [ang, 180 - ang, 180 + ang, -ang]:
-            azi = azimuth(major_axis_azimuth + d - utm_zone.convergence)
-            vertices.append(calc_fwd((c_x, c_y), azi, hyp))
+        major_axis_azimuth = 90 - major_axis_azimuth + utm_zone.convergence
+
+        ux = cos(major_axis_azimuth)
+        uy = sin(major_axis_azimuth)
+        vx = -sin(major_axis_azimuth)
+        vy = cos(major_axis_azimuth)
+
+        vertices = [
+            (cx + dx * ux + dy * vx, cy + dx * uy + dy * vy),
+            (cx - dx * ux + dy * vx, cy - dx * uy + dy * vy),
+            (cx - dx * ux - dy * vx, cy - dx * uy - dy * vy),
+            (cx + dx * ux - dy * vx, cy + dx * uy - dy * vy),
+        ]
 
         return UTMOpArea(vertices, major_axis_azimuth, utm_zone)

@@ -11,9 +11,9 @@ from shapely import Geometry, Point, Polygon, STRtree
 from cartesian import azimuth, calc_azimuth, calc_fwd, get_min_azimuth_diff
 from dubins import DubinsPath
 from edge import Edge
-from mathlib import NMI_2_M
+from mathlib import cos, sin, NMI_2_M
 from mercator import UTMZone
-from search_patterns import ParallelTrackSearch, SectorSearch
+from search_patterns import ExpandingSquare, ParallelTrackSearch, SectorSearch
 from vertex import Vertex
 #from utm_zone import UTMZone
 
@@ -86,49 +86,44 @@ class OpArea:
 
         return vertices
 
-    @classmethod
-    def from_datum(
-        cls,
-        centroid: CoordPair,
-        length: float,
-        width: float,
-        major_axis_azimuth: float,
-    ) -> OpArea:
-        """Generate an OpArea from a centroid, length, width, and axis azimuth.
+    def generate_expanding_square_search(
+        self,
+        csp: tuple[float, float],
+        first_course: int,
+        d: float,
+        unit_id: str,
+        num_legs: int = 12,
+        turn_dir: int = -1,
+    ) -> any:
+        """Generate the sector search pattern.
 
         Parameters
         ----------
-        centroid: tuple[float, float]
-            Longitude and latitude coordinates of the bounding box centroid.
-        length: float
-            Length of the OpArea, in nautical miles.
-            This is the longer length compared to width.
-        width: float
-            Width of the OpArea, in nautical miles.
-            This is the shorter distance compared to length.
-        major_axis_azimuth: float
-            Azimuth of the OpArea major axis. This will be the azimuth of the
-            longest edges of the OpArea.
+        csp: tuple[float, float]
+            Longitude and latitude coordinates of the commence search point.
+        first_course: int
+            Course of the first leg of the pattern.
+        d: float
+            Initial leg length, in nautical miles.
+        unit_id: str
+            Name of the unit assigned to the pattern.
+        num_legs: int, optional
+            Number of legs. Default is 12.
+        turn_dir: int, optional
+            Turn direction. 1 for right, -1 for left. Default is -1.
 
         Returns
         -------
-        OpArea
+        list[tuple[float, float]]
+            Pattern waypoints.
         """
-        vertices = []
-        length *= NMI_2_M
-        width *= NMI_2_M
+        d *= NMI_2_M
+        first_course -= self.utm_zone.convergence
 
-        utm_zone = UTMZone.from_lonlat(centroid)
-        c_x, c_y = utm_zone.geodetic_to_utm(centroid)
-
-        hyp = np.sqrt((length / 2)**2 + (width /2)**2)
-        ang = np.degrees(np.arctan2(width / 2, length / 2))
-
-        for d in [ang, 180 - ang, 180 + ang, -ang]:
-            azi = azimuth(major_axis_azimuth + d - utm_zone.convergence)
-            vertices.append(calc_fwd((c_x, c_y), azi, hyp))
-
-        return OpArea(vertices, major_axis_azimuth, utm_zone)
+        search = ExpandingSquare(self.utm_zone.geodetic_to_utm(csp))
+        search.run(first_course, d, num_legs=num_legs, turn_dir=turn_dir)
+        self.patterns[unit_id] = search.to_dataframe(
+            self.utm_zone.utm_to_geodetic)
 
     def generate_parallel_track_search(
         self,
@@ -156,7 +151,6 @@ class OpArea:
         any
             _description_
         """
-
         def _get_leg_course() -> float:
             edges = sorted(
                 [x for x in self.edges.values() if start_vert.name in x.name],
@@ -186,13 +180,13 @@ class OpArea:
 
         start_vert, _ = self.get_nearest_vertex(utm_csp)
 
-        search = ParallelTrackSearch(
-            self.polygon, start_vert.coords, self.utm_zone.convergence)
+        search = ParallelTrackSearch(self.polygon, start_vert.coords)
 
         first_course = _get_leg_course()
 
         search.run(first_course, (first_course + creep) % 360., track_spacing)
-        self.patterns[unit_id] = search.to_dataframe(self.utm_zone)
+        self.patterns[unit_id] = search.to_dataframe(
+            self.utm_zone.utm_to_geodetic)
 
     def generate_sector_search(
         self,
@@ -222,14 +216,16 @@ class OpArea:
         list[tuple[float, float]]
             Pattern waypoints.
         """
+        orientation -= self.utm_zone.convergence
         utm_csp = self.utm_zone.geodetic_to_utm(csp)
 
         if not self.contains_properly(Point(*utm_csp)):
             raise ValueError('Commence search point is outside OpArea.')
 
-        search = SectorSearch(utm_csp, self.utm_zone.convergence)
+        search = SectorSearch(utm_csp)
         search.run(radius*NMI_2_M, orientation, n_patterns)
-        self.patterns[unit_id] = search.to_dataframe(self.utm_zone)
+        self.patterns[unit_id] = search.to_dataframe(
+            self.utm_zone.utm_to_geodetic)
 
     def get_nearest_vertex(
         self,
@@ -359,6 +355,60 @@ class OpArea:
         bool
         """
         return self.polygon.intersects(geom)
+
+    @classmethod
+    def from_datum(
+        cls,
+        centroid: CoordPair,
+        length: float,
+        width: float,
+        major_axis_azimuth: float,
+    ) -> OpArea:
+        """Generate an OpArea from a centroid, length, width, and axis azimuth.
+
+        Parameters
+        ----------
+        centroid: tuple[float, float]
+            Longitude and latitude coordinates of the bounding box centroid.
+        length: float
+            Length of the OpArea, in nautical miles.
+            This is the longer length compared to width.
+        width: float
+            Width of the OpArea, in nautical miles.
+            This is the shorter distance compared to length.
+        major_axis_azimuth: float
+            Azimuth of the OpArea major axis. This will be the azimuth of the
+            longest edges of the OpArea.
+
+        Returns
+        -------
+        OpArea
+        """
+        vertices = []
+        length *= NMI_2_M
+        width *= NMI_2_M
+
+        utm_zone = UTMZone.from_lonlat(centroid)
+        cx, cy = utm_zone.geodetic_to_utm(centroid)
+
+        dx = length / 2
+        dy = width / 2
+
+        major_axis_azimuth = 90 - major_axis_azimuth + utm_zone.convergence
+
+        ux = cos(major_axis_azimuth)
+        uy = sin(major_axis_azimuth)
+        vx = -sin(major_axis_azimuth)
+        vy = cos(major_axis_azimuth)
+
+        vertices = [
+            (cx + dx * ux + dy * vx, cy + dx * uy + dy * vy),
+            (cx - dx * ux + dy * vx, cy - dx * uy + dy * vy),
+            (cx - dx * ux - dy * vx, cy - dx * uy - dy * vy),
+            (cx + dx * ux - dy * vx, cy + dx * uy - dy * vy),
+        ]
+
+        return OpArea(vertices, major_axis_azimuth, utm_zone)
 
     def _init_edges(self, coords) -> dict[str, Edge]:
         """Initialize the OpArea Edges.

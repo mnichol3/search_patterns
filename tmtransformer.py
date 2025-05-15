@@ -1,10 +1,11 @@
 """Custom transverse mercator projection."""
 from __future__ import annotations
+from math import sqrt
 from typing import List, Tuple, Union
 
 from pyproj import CRS, Transformer
 
-from mathlib import arctan, sin, tan
+from mathlib import arctan, sin, cos, tan
 from util import round_return
 
 
@@ -66,6 +67,23 @@ class TMTransformer:
         """
         lon, lat = point
         return arctan(tan(lon - self.lon_0) * sin(lat)).item()
+
+    @round_return(5)
+    def calc_k(self) -> float:
+        """Calculate the scale factor, k.
+
+        Parameters
+        ----------
+        None.
+
+        Returns
+        -------
+        float
+        """
+        sin2 = sin(self.lon_0) ** 2
+        cos2 = cos(self.lat_0) ** 2
+
+        return self.k_0 / sqrt(1 - sin2 * cos2)
 
     @round_return(8)
     def fwd(

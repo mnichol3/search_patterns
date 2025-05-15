@@ -11,22 +11,23 @@ from oparea import OpArea
 # last_known = (-79.695803, 26.518261)
 # hc144_csp = (-79.990021,  26.063275)
 
-last_known = (-80.026280,  26.219869)
-helo = 'MH-65-6579'
-helo_csp = (-80.079026, 26.139537)
+last_known = (-68.125874,  41.788893)
+helo = 'MH-60-6031'
+helo_csp = last_known
 #fixed_wing = 'HC-144-2316'
 
-length = 7.5
-width = 4
-major_axis = 3
+length = 10
+width = 5
+major_axis = 15
 
 oparea = OpArea.from_datum(last_known, length, width, major_axis)
 
-oparea.generate_sector_search(last_known, 1.25, 90, f'{helo}-01', n_patterns=2)
-oparea.generate_parallel_track_search(helo_csp, 90, 0.5, f'{helo}-02')
-
+#import pdb; pdb.set_trace()
+oparea.generate_sector_search(last_known, 1.25, 90, f'{helo}-01', n_patterns=1)
+#oparea.generate_parallel_track_search(helo_csp, 90, 0.5, f'{helo}-02')
+oparea.generate_expanding_square_search(last_known, 135, 1, f'{helo}-03')
 oparea.to_kml(
-    r'D:\Documents\code\projects\search_patterns\etc\oparea.kml',
+    r'C:\Users\mnicholson\code\etc\misc\oparea.kml',
     'TestOpArea',
     fill='orange',
     doc_name = 'CASE-20250504-002',
