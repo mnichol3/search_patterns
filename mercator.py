@@ -1,11 +1,9 @@
 """This module contains classes for transforming between geodetic, transverse,
 and universal transverse mercator projections."""
 from __future__ import annotations
-
 from typing import Iterable, TypeAlias
 
 import numpy as np
-import utm
 
 from mathlib import arcsin, arctan, cos, sin, sec, sech, tan
 from util import round_return
@@ -50,7 +48,7 @@ class TMProjection:
             (central_longitude, central_latitude))
 
     @classmethod
-    def from_bbox(cls, points: list[Point]) -> TMZone:
+    def from_bbox(cls, points: list[Point]) -> TMProjection:
         """Instantiate a new TMZone.
 
         Parameters
@@ -62,7 +60,7 @@ class TMProjection:
         central_lon = np.mean(lons).item()
         central_lat = np.mean(lats).item()
 
-        return TMZone(central_lon, central_lat)
+        return TMProjection(central_lon, central_lat)
 
     def calc_convergence(self, point: Point) -> float:
         """Compute the convergence angle given a longitude and latitude
@@ -71,7 +69,7 @@ class TMProjection:
         Parameters
         ----------
         point: Point
-            Longitude and latitude coordiante pair, in decimal degrees.
+            Longitude and latitude coordinate pair, in decimal degrees.
 
         Returns
         -------
