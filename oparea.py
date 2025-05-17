@@ -13,12 +13,11 @@ from cartesian import calc_azimuth, get_min_azimuth_diff
 from dubins import DubinsPath
 from edge import Edge
 from mathlib import cos, sin, NMI_2_M
-from mercator import UTMZone
 from search_patterns import ExpandingSquare, ParallelTrackSearch, SectorSearch
 from tmtransformer import TMTransformer
 from util import get_coord_mean
 from vertex import Vertex
-#from utm_zone import UTMZone
+from utm_zone import UTMZone
 
 try:
     import simplekml

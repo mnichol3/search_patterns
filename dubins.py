@@ -171,7 +171,7 @@ class DubinsPath:
         """
         waypoints = self.construct_path(delta_psi=delta_psi, delta_d=delta_d)
 
-        self.theta = self._normalize_angle(self.theta + 180)
+        self.theta = self.normalize_angle(self.theta + 180)
         waypoints.extend(self.calc_line_points(waypoints[-1], delta_d))
 
         # Closure
@@ -240,7 +240,7 @@ class DubinsPath:
             waypoints.append((x_n, y_n))
             self.psi = self.psi + delta_psi * circle.s
 
-            self.psi = self._normalize_angle(self.psi)
+            self.psi = self.normalize_angle(self.psi)
 
         return waypoints
 
@@ -290,7 +290,8 @@ class DubinsPath:
 
         return 90 - arctan2((y_f - y_i), (x_f - x_i))
 
-    def _normalize_angle(self, val: float) -> float:
+    @classmethod
+    def normalize_angle(self, val: float) -> float:
         """Normalize an angle to [-180, 180]."""
         if val > 180:
             val -= 360

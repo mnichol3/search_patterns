@@ -138,6 +138,7 @@ def calc_fwd(
     tuple of float, float
         X- and y-coodinates of the new point.
     """
+    azimuth %= 360.
     x, y = origin
 
     azimuth = 90 - azimuth

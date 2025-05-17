@@ -1,5 +1,6 @@
 from collections.abc import Callable
 from copy import deepcopy
+from typing import TypeAlias
 
 import pandas as pd
 from pyproj import Geod
@@ -10,10 +11,13 @@ from mathlib import M_2_NMI
 from util import round_return
 
 
+Point: TypeAlias = tuple[float, float]
+
+
 class BaseSearchPattern:
     """Search pattern base class."""
 
-    def __init__(self, csp: tuple[float, float]):
+    def __init__(self, csp: Point):
         """BaseSearchPattern constructor.
 
         Parameters
@@ -43,11 +47,11 @@ class BaseSearchPattern:
         -------
         pandas DataFrame
         """
-        def _eucl_dist(p1: tuple[float, float], p2: tuple[float, float]):
+        def _eucl_dist(p1: Point, p2: Point):
             return calc_distance(p1, p2)
 
         @round_return(2)
-        def _geod_dist(p1: tuple[float, float], p2: tuple[float, float]):
+        def _geod_dist(p1: Point, p2: Point):
             return geod.inv(*p1, *p2)[-1] * M_2_NMI
 
         if len(self.waypoints) == 0:
@@ -93,7 +97,7 @@ class BaseSearchPattern:
 class ExpandingSquare(BaseSearchPattern):
     """Class for generating an expanding square search pattern."""
 
-    def __init__(self, csp: tuple[float, float]):
+    def __init__(self, csp: Point):
         """Instantiate a SectorSearch object.
 
         Parameters
@@ -109,7 +113,7 @@ class ExpandingSquare(BaseSearchPattern):
         d: float,
         num_legs: int = 12,
         turn_dir: int = -1,
-    ) -> list[tuple[float, float]]:
+    ) -> list[Point]:
         """Generate the sector search pattern.
 
         Parameters
@@ -158,7 +162,7 @@ class ExpandingSquare(BaseSearchPattern):
 class SectorSearch(BaseSearchPattern):
     """Class for generating a sector search pattern."""
 
-    def __init__(self, csp: tuple[float, float]):
+    def __init__(self, csp: Point):
         """Instantiate a SectorSearch object.
 
         Parameters
@@ -173,7 +177,7 @@ class SectorSearch(BaseSearchPattern):
         first_course: int,
         radius: int,
         n_patterns: int = 1,
-    ) -> list[tuple[float, float]]:
+    ) -> list[Point]:
         """Generate the sector search pattern.
 
         Parameters
@@ -205,10 +209,10 @@ class SectorSearch(BaseSearchPattern):
 
     def _gen_pattern(
         self,
-        csp: tuple[float, float],
+        csp: Point,
         track: int,
         radius: int,
-    ) -> list[tuple[float, float]]:
+    ) -> list[Point]:
         """_summary_
 
         Parameters
@@ -253,7 +257,7 @@ class SectorSearch(BaseSearchPattern):
 class ParallelTrackSearch(BaseSearchPattern):
     """Class for generating a parallel track search pattern."""
 
-    def __init__(self, poly: Polygon, csp: tuple[float, float]):
+    def __init__(self, poly: Polygon, csp: Point):
         """Instantiate a ParallelTrackSearch object.
 
         Parameters
@@ -271,7 +275,7 @@ class ParallelTrackSearch(BaseSearchPattern):
         first_course: int,
         creep: float,
         track_spacing: float,
-    ) -> list[tuple[float, float]]:
+    ) -> list[Point]:
         """Generate the parallel track search pattern.
 
         Parameters
