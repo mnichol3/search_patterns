@@ -1,7 +1,7 @@
 """Custom transverse mercator projection."""
 from __future__ import annotations
 from math import sqrt
-from typing import List, Tuple, Union
+from typing import TypeAlias
 
 from pyproj import CRS, Transformer
 
@@ -9,7 +9,7 @@ from mathlib import arctan, sin, cos, tan
 from util import round_return
 
 
-Point = Tuple[float, float]
+Point: TypeAlias = tuple[float, float]
 
 
 class TMTransformer:
@@ -96,8 +96,8 @@ class TMTransformer:
     @round_return(8)
     def fwd(
         self,
-        coords: Union[Point, List[Point]],
-    ) -> Union[Point, List[Point]]:
+        coords: Point | list[Point],
+    ) -> Point | list[Point]:
         """Transform coordinates from geodetic to transverse mercator.
 
         Parameters
@@ -111,13 +111,14 @@ class TMTransformer:
         tuple[float, float] or list[tuple[float, float]]
             Transformed transverse mercator coordinates.
         """
-        return self.transformers['fwd'].transform(*self._get_xy(coords))
+        return pair_up(
+            self.transformers['fwd'].transform(*self._get_xy(coords)))
 
     @round_return(8)
     def inv(
         self,
-        coords: Union[Point, List[Point]],
-    ) -> Union[Point, List[Point]]:
+        coords: Point | list[Point],
+    ) -> Point | list[Point]:
         """Transform coordinates from transverse mercator to geodetic.
 
         Parameters
@@ -131,7 +132,8 @@ class TMTransformer:
         tuple[float, float] or list[tuple[float, float]]
             Transformed geodetic longitude & latitude coordinates.
         """
-        return self.transformers['inv'].transform(*self._get_xy(coords))
+        return pair_up(
+            self.transformers['inv'].transform(*self._get_xy(coords)))
 
     def _get_proj_str(self) -> str:
         """Construct the transverse mercator proj CRS string."""
@@ -152,8 +154,8 @@ class TMTransformer:
 
     def _get_xy(
         self,
-        coords: Union[Point, List[Point]],
-    ) -> Union[Point, Tuple[List[float], List[float]]]:
+        coords: Point | list[Point],
+    ) -> Point | tuple[list[float], list[float]]:
         """Split coordinate pair(s) into x- and y-coordinates."""
         try:
             x, y = list(zip(*coords))
@@ -185,3 +187,11 @@ class TMTransformer:
     def __repr__(self) -> str:
         """Return a string representation of the object."""
         return f'<{self.__class__.__name__} ({self.lon_0}, {self.lat_0})>'
+
+
+def pair_up(tpl: tuple[list[float], list[float]]) -> list[Point]:
+    """Zip a tuple of lists of floats into a single list of tuples."""
+    try:
+        return list(zip(*tpl))
+    except TypeError:
+        return tpl

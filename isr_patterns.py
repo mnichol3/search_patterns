@@ -2,7 +2,7 @@
 from typing import TypeAlias
 
 from cartesian import calc_fwd
-from dubins import DubinsPath, FTP, Turn
+from dubins import DubinsPath, FTP, Turn, normalize_angle
 from mathlib import cos, sin
 from search_patterns import BaseSearchPattern
 
@@ -59,7 +59,7 @@ class Orbit(BaseSearchPattern):
             y_n = y + (turn_dir * radius * cos(psi_adj))
 
             waypoints.append((x_n, y_n))
-            psi = DubinsPath.normalize_angle(psi + delta_psi * turn_dir)
+            psi = normalize_angle(psi + delta_psi * turn_dir)
 
         # Closure
         waypoints.append(waypoints[0])
@@ -88,7 +88,7 @@ class Racetrack(BaseSearchPattern):
         turn_radius: float,
         turn_dir: int = -1,
         delta_psi: int = 1,
-        delta_d: float = 500,
+        delta_d: float = 100,
     ) -> list[Point]:
         """Construct a racetrack pattern.
 

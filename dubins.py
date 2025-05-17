@@ -35,7 +35,7 @@ class FTP:
     track: float
 
     def __post_init__(self) -> None:
-        self.track %= 360.
+        self.track = round(normalize_angle(self.track), 2)
 
 
     @property
@@ -115,7 +115,6 @@ class DubinsPath:
             for x in [origin, terminus]]
 
         self.theta = self.calc_theta()
-        self.d = self.calc_d()
         self.psi = origin.track
 
     def construct_path(
@@ -171,11 +170,11 @@ class DubinsPath:
         """
         waypoints = self.construct_path(delta_psi=delta_psi, delta_d=delta_d)
 
-        self.theta = self.normalize_angle(self.theta + 180)
+        self.theta = normalize_angle(self.theta + 180)
         waypoints.extend(self.calc_line_points(waypoints[-1], delta_d))
 
         # Closure
-        waypoints.append(self.origin.xy)
+        waypoints.append(waypoints[0])
 
         return waypoints
 
@@ -231,6 +230,7 @@ class DubinsPath:
 
         # TODO really dont like this condition, easy to skip over if
         # values dont match exactly
+        psi_f = round(psi_f, 2)
         while self.psi != psi_f:
             psi = 90 - self.psi
 
@@ -240,7 +240,7 @@ class DubinsPath:
             waypoints.append((x_n, y_n))
             self.psi = self.psi + delta_psi * circle.s
 
-            self.psi = self.normalize_angle(self.psi)
+            self.psi = normalize_angle(self.psi)
 
         return waypoints
 
@@ -261,8 +261,9 @@ class DubinsPath:
         waypoints = []
         d_sum = 0
         x_p, y_p = origin
+        d_max = self.calc_d() - (delta / 2) # prevent overrun
 
-        while d_sum < self.d:
+        while d_sum < d_max:
             x_n = x_p + delta * sin(self.theta)
             y_n = y_p + delta * cos(self.theta)
 
@@ -290,12 +291,12 @@ class DubinsPath:
 
         return 90 - arctan2((y_f - y_i), (x_f - x_i))
 
-    @classmethod
-    def normalize_angle(self, val: float) -> float:
-        """Normalize an angle to [-180, 180]."""
-        if val > 180:
-            val -= 360
-        elif val < -180:
-            val += 360
 
-        return val
+def normalize_angle(val: float) -> float:
+    """Normalize an angle to [-180, 180]."""
+    if val > 180:
+        val -= 360
+    elif val < -180:
+        val += 360
+
+    return val
