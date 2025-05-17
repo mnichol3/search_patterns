@@ -1,4 +1,4 @@
-"""Math functions for the Cartesian coordiante system."""
+"""Math functions for the Cartesian coordinate system."""
 import operator
 
 import numpy as np

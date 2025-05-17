@@ -6,7 +6,7 @@ from oparea import OpArea
 
 @pytest.fixture
 def oparea_coords() -> list[tuple[float, float]]:
-    """Coordiantes to define an OpArea for testing.
+    """Coordinates to define an OpArea for testing.
 
     Returns
     -------

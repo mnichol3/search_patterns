@@ -8,7 +8,6 @@ from shapely import LineString, Polygon
 from cartesian import azimuth, calc_distance, calc_fwd
 from mathlib import M_2_NMI
 from util import round_return
-from utm_zone import UTMZone
 
 
 class BaseSearchPattern:
@@ -33,7 +32,7 @@ class BaseSearchPattern:
 
         Parameters
         ----------
-        utm_zone: UTMZone, optional
+        transformer: Callable, optional
             If passed, the coordinates will be projected from transverse
             mercator to geodetic longitude & latitude and distances will be
             given in nautical miles.
