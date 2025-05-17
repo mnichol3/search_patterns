@@ -3,7 +3,7 @@ from typing import TypeAlias
 
 from cartesian import calc_fwd
 from dubins import DubinsPath, FTP, Turn
-from mathlib import cos, sin, NMI_2_M
+from mathlib import cos, sin
 from search_patterns import BaseSearchPattern
 
 
@@ -35,7 +35,7 @@ class Orbit(BaseSearchPattern):
         Parameters
         ----------
         radius: float
-            Radius of the orbit, in nautical miles.
+            Radius of the orbit, in meters.
         turn_dir: int, optional
             Turn direction. 1 = right, -1 = left. Default is -1.
         delta_psi: int
@@ -53,7 +53,6 @@ class Orbit(BaseSearchPattern):
         psi_f = 90 - inbd_crs + (-turn_dir * delta_psi)
 
         while psi != psi_f:
-            print(psi)
             psi_adj = 90 - psi
 
             x_n = x - (turn_dir * radius * sin(psi_adj))
@@ -89,7 +88,7 @@ class Racetrack(BaseSearchPattern):
         turn_radius: float,
         turn_dir: int = -1,
         delta_psi: int = 1,
-        delta_d: float = 0.1,
+        delta_d: float = 500,
     ) -> list[Point]:
         """Construct a racetrack pattern.
 
@@ -98,9 +97,9 @@ class Racetrack(BaseSearchPattern):
         course: int
             Inbound CSP course.
         d: float
-            Straight segment lengths, in nautical miles.
+            Straight segment lengths, in meters.
         turn_radius: float
-            Turn radius, in nautical miles.
+            Turn radius, in meters.
         turn_dir: int, optional
             Turn direction. 1 = right, -1 = left. Default is -1.
         delta_psi: int
@@ -108,7 +107,7 @@ class Racetrack(BaseSearchPattern):
             Default is 1.
         delta_d: float
             Interval at which to compute the straight segment waypoints,
-            in nautical miles. Default is 0.1.
+            in meters. Default is 500.
 
         Returns
         -------
@@ -116,12 +115,10 @@ class Racetrack(BaseSearchPattern):
         """
         origin = FTP(*self.csp, course)
         terminus = FTP(
-            *calc_fwd(self.csp, course + 180., d * NMI_2_M), course)
-
-        delta_d *= NMI_2_M
+            *calc_fwd(self.csp, course + 180., d), course)
 
         path = DubinsPath(
-            origin, terminus, turn_radius * NMI_2_M, get_turn(turn_dir))
+            origin, terminus, turn_radius, get_turn(turn_dir))
 
         self.waypoints = path.construct_racetrack(
             delta_psi=delta_psi, delta_d=delta_d)
