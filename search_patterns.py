@@ -1,4 +1,6 @@
+from collections.abc import Callable
 from copy import deepcopy
+from typing import TypeAlias
 
 import pandas as pd
 from pyproj import Geod
@@ -7,13 +9,15 @@ from shapely import LineString, Polygon
 from cartesian import azimuth, calc_distance, calc_fwd
 from mathlib import M_2_NMI
 from util import round_return
-from utm_zone import UTMZone
+
+
+Point: TypeAlias = tuple[float, float]
 
 
 class BaseSearchPattern:
     """Search pattern base class."""
 
-    def __init__(self, csp: tuple[float, float]):
+    def __init__(self, csp: Point):
         """BaseSearchPattern constructor.
 
         Parameters
@@ -24,27 +28,34 @@ class BaseSearchPattern:
         self.csp = csp
         self.waypoints = None
 
-    def to_dataframe(self, utm_zone: UTMZone | None = None) -> pd.DataFrame:
+    def to_dataframe(
+        self,
+        transformer: Callable | None = None,
+    ) -> pd.DataFrame:
         """Return the search pattern as a dataframe.
 
         Parameters
         ----------
-        utm_zone: UTMZone, optional
-            If passed, the coordinates will be projected from UTM to geodetic
-            longitude & latitude and distances will be given in nautical miles.
-            Default is None, meaning the coordinates will stay in UTM and
+        transformer: Callable, optional
+            If passed, the coordinates will be projected from transverse
+            mercator to geodetic longitude & latitude and distances will be
+            given in nautical miles.
+            Default is None, meaning the coordinates will stay in TM and
             distances will be given in meters.
 
         Returns
         -------
         pandas DataFrame
         """
-        def _eucl_dist(p1: tuple[float, float], p2: tuple[float, float]):
+        def _eucl_dist(p1: Point, p2: Point):
             return calc_distance(p1, p2)
 
         @round_return(2)
-        def _geod_dist(p1: tuple[float, float], p2: tuple[float, float]):
+        def _geod_dist(p1: Point, p2: Point):
             return geod.inv(*p1, *p2)[-1] * M_2_NMI
+
+        if len(self.waypoints) == 0:
+            raise ValueError(f'Waypoints list is empty.')
 
         columns = [
             'lon',
@@ -57,8 +68,8 @@ class BaseSearchPattern:
         dist_func = _eucl_dist
         waypoints = deepcopy(self.waypoints)
 
-        if utm_zone:
-            waypoints = utm_zone.utm_to_geodetic(waypoints)
+        if transformer:
+            waypoints = transformer(waypoints)
             geod = Geod(ellps='WGS84')
             dist_func = _geod_dist
 
@@ -83,39 +94,99 @@ class BaseSearchPattern:
         return f'<{self.__class__.__name__} ({lon}, {lat})>'
 
 
-class SectorSearch(BaseSearchPattern):
-    """Class for generating a sector search pattern."""
+class ExpandingSquare(BaseSearchPattern):
+    """Class for generating an expanding square search pattern."""
 
-    def __init__(
-        self,
-        csp: tuple[float, float],
-        convergence: float = 0.0,
-    ):
+    def __init__(self, csp: Point):
         """Instantiate a SectorSearch object.
 
         Parameters
         ----------
         csp: tuple of float, float
             X- and y-coordinates of the commence search point.
-        radius: int
-            Pattern radius, unitless.
-        orientation: int
-            Pattern orientatin, in degrees.
         """
         super().__init__(csp)
-        self.convergence = convergence
 
     def run(
         self,
-        radius: int,
-        orientation: int,
-        n_patterns: int = 1,
-    ) -> list[tuple[float, float]]:
+        first_course: int,
+        d: float,
+        num_legs: int = 12,
+        turn_dir: int = -1,
+    ) -> list[Point]:
         """Generate the sector search pattern.
 
         Parameters
         ----------
-        n_patterns : int, optional
+        first_course: int
+            Course of the first leg of the pattern.
+        d: float
+            Initial leg length, in meters.
+        num_legs: int, optional
+            Number of legs. Default is 12.
+        turn_dir: int, optional
+            Turn direction. 1 for right, -1 for left. Default is -1.
+
+        Returns
+        -------
+        list[tuple[float, float]]
+            Pattern waypoints.
+        """
+        n = 0
+        curr_d = d
+        prev_point = self.csp
+        waypoints = [prev_point]
+        curr_crs = first_course
+
+        if turn_dir not in [-1, 1]:
+            raise ValueError(
+                f'turn_dir parameters must be -1 or 1, got "{turn_dir}"')
+
+        while n <= num_legs:
+            new_point = calc_fwd(prev_point, curr_crs, curr_d)
+            waypoints.append(new_point)
+            prev_point = new_point
+
+            curr_crs = azimuth(curr_crs + (turn_dir * 90))
+
+            if n % 2 != 0:
+                curr_d += d
+
+            n += 1
+
+        self.waypoints = waypoints
+
+        return waypoints
+
+
+class SectorSearch(BaseSearchPattern):
+    """Class for generating a sector search pattern."""
+
+    def __init__(self, csp: Point):
+        """Instantiate a SectorSearch object.
+
+        Parameters
+        ----------
+        csp: tuple of float, float
+            X- and y-coordinates of the commence search point.
+        """
+        super().__init__(csp)
+
+    def run(
+        self,
+        first_course: int,
+        radius: int,
+        n_patterns: int = 1,
+    ) -> list[Point]:
+        """Generate the sector search pattern.
+
+        Parameters
+        ----------
+        first_course: int
+            Course of the first leg, in degrees.
+        radius: float
+            Radius, in meters.
+        n_patterns: int, optional
             Number of patterns to generate, by default 1.
 
         Returns
@@ -125,11 +196,11 @@ class SectorSearch(BaseSearchPattern):
         """
         n_patt = 0
         waypoints = []
-        track = azimuth(orientation - self.convergence)
+        curr_course = first_course
 
         while n_patt < n_patterns:
-            waypoints.extend(self._gen_pattern(self.csp, track, radius))
-            track = azimuth(track + 30)
+            waypoints.extend(self._gen_pattern(self.csp, curr_course, radius))
+            curr_course = azimuth(curr_course + 30)
             n_patt += 1
 
         self.waypoints = waypoints
@@ -138,10 +209,10 @@ class SectorSearch(BaseSearchPattern):
 
     def _gen_pattern(
         self,
-        csp: tuple[float, float],
+        csp: Point,
         track: int,
         radius: int,
-    ) -> list[tuple[float, float]]:
+    ) -> list[Point]:
         """_summary_
 
         Parameters
@@ -186,38 +257,35 @@ class SectorSearch(BaseSearchPattern):
 class ParallelTrackSearch(BaseSearchPattern):
     """Class for generating a parallel track search pattern."""
 
-    def __init__(
-        self,
-        poly: Polygon,
-        csp: tuple[float, float],
-        convergence: float = 0.0,
-    ):
+    def __init__(self, poly: Polygon, csp: Point):
         """Instantiate a ParallelTrackSearch object.
 
         Parameters
         ----------
+        poly: shapely.Polygon
+            OpArea polygon.
         csp: tuple of float, float
             X- and y-coordinates of the commence search point.
-        radius: int
-            Pattern radius, unitless.
-        orientation: int
-            Pattern orientatin, in degrees.
         """
         super().__init__(csp)
         self.poly = poly
-        self.convergence = convergence
 
     def run(
         self,
-        first_course: float,
+        first_course: int,
         creep: float,
         track_spacing: float,
-    ) -> list[tuple[float, float]]:
+    ) -> list[Point]:
         """Generate the parallel track search pattern.
 
         Parameters
         ----------
-        None
+        first_course: int
+            Course of the first leg of the pattern, in degrees.
+        creep: int
+            Pattern creep direction, in degrees.
+        track_spacing: float
+            Track spacing, in meters.
 
         Returns
         -------
@@ -251,7 +319,9 @@ class ParallelTrackSearch(BaseSearchPattern):
 
             curr_pt = calc_fwd(curr_pt, creep, track_spacing)
             fwd_pt = calc_fwd(curr_pt, first_course, vector_len)
-            intersection = self.poly.intersection(LineString([curr_pt, fwd_pt]))
+
+            intersection = self.poly.intersection(
+                LineString([curr_pt, fwd_pt]))
 
             leg_num += 1
 

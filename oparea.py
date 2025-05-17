@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from abc import ABC, abstractmethod
 from itertools import pairwise
 from string import ascii_uppercase
 from typing import TypeAlias, TYPE_CHECKING
@@ -8,14 +9,15 @@ from typing import TypeAlias, TYPE_CHECKING
 import numpy as np
 from shapely import Geometry, Point, Polygon, STRtree
 
-from cartesian import azimuth, calc_azimuth, calc_fwd, get_min_azimuth_diff
+from cartesian import calc_azimuth, get_min_azimuth_diff
 from dubins import DubinsPath
 from edge import Edge
-from mathlib import NMI_2_M
-from mercator import UTMZone
-from search_patterns import ParallelTrackSearch, SectorSearch
+from mathlib import cos, sin, NMI_2_M
+from search_patterns import ExpandingSquare, ParallelTrackSearch, SectorSearch
+from tmtransformer import TMTransformer
+from util import get_coord_mean
 from vertex import Vertex
-#from utm_zone import UTMZone
+from utm_zone import UTMZone
 
 try:
     import simplekml
@@ -29,28 +31,22 @@ if TYPE_CHECKING:
 CoordPair: TypeAlias = tuple[float, float]
 
 
-class OpArea:
+class BaseOpArea(ABC):
+    """OpArea base class."""
 
     def __init__(
         self,
         coords: list[CoordPair],
         major_axis: float,
-        utm_zone: UTMZone,
+        transform: bool = False,
     ):
-        """Instantiate a new OpArea.
-
-        Parameters
-        ----------
-        coords: list of CoordPair
-            List of x- and y-coordinate pairs defining the extent of the OpArea.
-        utm_zone: UTMZone
-            UTM zone used to project the coordinates to UTM.
-        """
         coords.append(coords[0])
+
+        if transform:
+            coords = self.transform_fwd(coords)
 
         self.polygon = Polygon(coords)
         self.edges = self._init_edges(coords)
-        self.utm_zone = utm_zone
         self.major_axis = major_axis
         self.patterns = {}
 
@@ -60,11 +56,16 @@ class OpArea:
         return self.polygon.area
 
     @property
+    @abstractmethod
+    def convergence(self) -> float:
+        """Return the convergence angle."""
+        pass
+
+    @property
     def coords(self) -> list[CoordPair]:
         """Return the coordinates of the OpArea vertices as longitude
         & latitude pairs."""
-        return self.utm_zone.utm_to_geodetic(
-            [x.coords for x in self.vertices.values()])
+        return self.transform_inv([x.coords for x in self.vertices.values()])
 
     @property
     def vertices(self) -> dict[str, Vertex]:
@@ -86,49 +87,72 @@ class OpArea:
 
         return vertices
 
-    @classmethod
-    def from_datum(
-        cls,
-        centroid: CoordPair,
-        length: float,
-        width: float,
-        major_axis_azimuth: float,
-    ) -> OpArea:
-        """Generate an OpArea from a centroid, length, width, and axis azimuth.
+    def get_nearest_vertex(
+        self,
+        curr_pt: tuple[float, float] | Point,
+    ) -> tuple[Vertex, float]:
+        """Return the vertex closest to the given point and the distance
+        between the two.
 
         Parameters
         ----------
-        centroid: tuple[float, float]
-            Longitude and latitude coordinates of the bounding box centroid.
-        length: float
-            Length of the OpArea, in nautical miles.
-            This is the longer length compared to width.
-        width: float
-            Width of the OpArea, in nautical miles.
-            This is the shorter distance compared to length.
-        major_axis_azimuth: float
-            Azimuth of the OpArea major axis. This will be the azimuth of the
-            longest edges of the OpArea.
+        curr_pt: tuple[float, float] or shapely.Point
+            Point of interest.
 
         Returns
         -------
-        OpArea
+        Vertex
+            Vertex closest to the given point.
+        float
+            Unitless distance between the given point and the closest vertex.
         """
-        vertices = []
-        length *= NMI_2_M
-        width *= NMI_2_M
+        if not isinstance(curr_pt, Point):
+            curr_pt = Point(*curr_pt)
 
-        utm_zone = UTMZone.from_lonlat(centroid)
-        c_x, c_y = utm_zone.geodetic_to_utm(centroid)
+        tree, items = self._get_vertex_tree()
+        idx, dist = tree.query_nearest(curr_pt, return_distance=True)
 
-        hyp = np.sqrt((length / 2)**2 + (width /2)**2)
-        ang = np.degrees(np.arctan2(width / 2, length / 2))
+        vert = self.vertices[items.take(idx).tolist()[0]]
+        dist = round(float(dist[0]), 2)
 
-        for d in [ang, 180 - ang, 180 + ang, -ang]:
-            azi = azimuth(major_axis_azimuth + d - utm_zone.convergence)
-            vertices.append(calc_fwd((c_x, c_y), azi, hyp))
+        return vert, dist
 
-        return OpArea(vertices, major_axis_azimuth, utm_zone)
+    def generate_expanding_square_search(
+        self,
+        csp: tuple[float, float],
+        first_course: int,
+        d: float,
+        unit_id: str,
+        num_legs: int = 12,
+        turn_dir: int = -1,
+    ) -> any:
+        """Generate the sector search pattern.
+
+        Parameters
+        ----------
+        csp: tuple[float, float]
+            Longitude and latitude coordinates of the commence search point.
+        first_course: int
+            Course of the first leg of the pattern.
+        d: float
+            Initial leg length, in nautical miles.
+        unit_id: str
+            Name of the unit assigned to the pattern.
+        num_legs: int, optional
+            Number of legs. Default is 12.
+        turn_dir: int, optional
+            Turn direction. 1 for right, -1 for left. Default is -1.
+
+        Returns
+        -------
+        list[tuple[float, float]]
+            Pattern waypoints.
+        """
+        d *= NMI_2_M
+
+        search = ExpandingSquare(self.transform_fwd(csp))
+        search.run(first_course, d, num_legs=num_legs, turn_dir=turn_dir)
+        self.patterns[unit_id] = search.to_dataframe(self.transform_inv)
 
     def generate_parallel_track_search(
         self,
@@ -137,6 +161,7 @@ class OpArea:
         track_spacing: float,
         unit_id: str,
         axis: str = 'major',
+        first_course: float | None = None,
     ) -> any:
         """Construct a parallel track search pattern.
 
@@ -181,24 +206,23 @@ class OpArea:
             else:
                 return edge.back_azimuth
 
-        utm_csp = self.utm_zone.geodetic_to_utm(csp)
         track_spacing *= NMI_2_M
 
-        start_vert, _ = self.get_nearest_vertex(utm_csp)
+        start_vert, _ = self.get_nearest_vertex(self.transform_fwd(csp))
 
-        search = ParallelTrackSearch(
-            self.polygon, start_vert.coords, self.utm_zone.convergence)
+        search = ParallelTrackSearch(self.polygon, start_vert.coords)
 
-        first_course = _get_leg_course()
+        if first_course is None:
+            first_course = _get_leg_course()
 
         search.run(first_course, (first_course + creep) % 360., track_spacing)
-        self.patterns[unit_id] = search.to_dataframe(self.utm_zone)
+        self.patterns[unit_id] = search.to_dataframe(self.transform_inv)
 
     def generate_sector_search(
         self,
         csp: tuple[float, float],
-        radius: int,
         orientation: int,
+        radius: int,
         unit_id: str,
         n_patterns: int = 1,
     ) -> any:
@@ -208,10 +232,10 @@ class OpArea:
         ----------
         csp: tuple[float, float]
             Longitude and latitude coordinates of the commence search point.
+        orientation: int
+            Pattern orientation, in degrees.
         radius: int
             Pattern radius, in nautical miles.
-        orientation: int
-            Pattern orientatin, in degrees.
         unit_id: str
             ID of the unit to conduct the search.
         n_patterns : int, optional
@@ -222,44 +246,14 @@ class OpArea:
         list[tuple[float, float]]
             Pattern waypoints.
         """
-        utm_csp = self.utm_zone.geodetic_to_utm(csp)
+        proj_csp = self.transform_fwd(csp)
 
-        if not self.contains_properly(Point(*utm_csp)):
+        if not self.contains_properly(Point(*proj_csp)):
             raise ValueError('Commence search point is outside OpArea.')
 
-        search = SectorSearch(utm_csp, self.utm_zone.convergence)
-        search.run(radius*NMI_2_M, orientation, n_patterns)
-        self.patterns[unit_id] = search.to_dataframe(self.utm_zone)
-
-    def get_nearest_vertex(
-        self,
-        curr_pt: tuple[float, float] | Point,
-    ) -> tuple[Vertex, float]:
-        """Return the vertex closest to the given point and the distance
-        between the two.
-
-        Parameters
-        ----------
-        curr_pt: tuple[float, float] or shapely.Point
-            Point of interest.
-
-        Returns
-        -------
-        Vertex
-            Vertex closest to the given point.
-        float
-            Unitless distance between the given point and the closest vertex.
-        """
-        if not isinstance(curr_pt, Point):
-            curr_pt = Point(*curr_pt)
-
-        tree, items = self._get_vertex_tree()
-        idx, dist = tree.query_nearest(curr_pt, return_distance=True)
-
-        vert = self.vertices[items.take(idx).tolist()[0]]
-        dist = round(float(dist[0]), 2)
-
-        return vert, dist
+        search = SectorSearch(proj_csp)
+        search.run(orientation, radius*NMI_2_M, n_patterns)
+        self.patterns[unit_id] = search.to_dataframe(self.transform_inv)
 
     def to_kml(
         self,
@@ -303,6 +297,34 @@ class OpArea:
            ls.style.linestyle.width = 3
 
         kml.save(path)
+
+    @abstractmethod
+    def transform_fwd(self, coords: list[CoordPair]) -> list[CoordPair]:
+        """Perform a forward coordinate system transform.
+
+        Parameters
+        ----------
+        coords: list of tuple[float, float]
+
+        Returns
+        -------
+        list of tuple[float, float]
+        """
+        pass
+
+    @abstractmethod
+    def transform_inv(self, coords: list[CoordPair]) -> list[CoordPair]:
+        """Perform a inverse coordinate system transform.
+
+        Parameters
+        ----------
+        coords: list of tuple[float, float]
+
+        Returns
+        -------
+        list of tuple[float, float]
+        """
+        pass
 
     def contains(self, geom: Geometry) -> bool:
         """Return True if another shapely.Geometry is entirely inside the
@@ -360,6 +382,36 @@ class OpArea:
         """
         return self.polygon.intersects(geom)
 
+    @classmethod
+    def from_datum(
+        cls,
+        centroid: CoordPair,
+        length: float,
+        width: float,
+        major_axis_azimuth: float,
+    ) -> BaseOpArea:
+        """Generate an OpArea from a centroid, length, width, and axis azimuth.
+
+        Parameters
+        ----------
+        centroid: tuple[float, float]
+            Longitude and latitude coordinates of the bounding box centroid.
+        length: float
+            Length of the OpArea, in nautical miles.
+            This is the longer length compared to width.
+        width: float
+            Width of the OpArea, in nautical miles.
+            This is the shorter distance compared to length.
+        major_axis_azimuth: float
+            Azimuth of the OpArea major axis. This will be the azimuth of the
+            longest edges of the OpArea.
+
+        Returns
+        -------
+        OpArea
+        """
+        pass
+
     def _init_edges(self, coords) -> dict[str, Edge]:
         """Initialize the OpArea Edges.
 
@@ -405,6 +457,242 @@ class OpArea:
         return STRtree(geoms), np.array(names)
 
     def __repr__(self) -> str:
+        """Return a string representation of the object."""
         return (
             f'<{self.__class__.__name__}'
             f' {[tuple(round(x, 4) for x in c) for c in self.coords]}>')
+
+
+class TMOpArea(BaseOpArea):
+    """An OpArea subclass using a custom transverse mercator projection."""
+
+    def __init__(
+        self,
+        coords: list[CoordPair],
+        major_axis: float,
+        transformer: TMTransformer | None = None,
+        transform: bool = False,
+    ):
+        """Instantiate a new OpArea.
+
+        Parameters
+        ----------
+        coords: list of CoordPair
+            List of x- and y-coordinate pairs defining the extent of the
+            OpArea.
+        utm_zone: UTMZone
+            UTM zone used to project the coordinates to UTM.
+        """
+        self.transformer = transformer
+
+        if transformer is None:
+            self.transformer = TMTransformer.from_lonlat(
+                *get_coord_mean(coords))
+
+        super().__init__(coords, major_axis, transform)
+
+    @property
+    def convergence(self) -> float:
+        """Return the convergence angle."""
+        return 0.0
+
+    def transform_fwd(self, coords: list[CoordPair]) -> list[CoordPair]:
+        """Perform a forward coordinate system transform.
+
+        Parameters
+        ----------
+        coords: list of tuple[float, float]
+
+        Returns
+        -------
+        list of tuple[float, float]
+        """
+        if (
+            isinstance(coords, tuple)
+            and all(isinstance(x, float) for x in coords)
+        ):
+            return self.transformer.fwd(coords)
+
+        return list(zip(*self.transformer.fwd(coords)))
+
+    def transform_inv(self, coords: list[CoordPair]) -> list[CoordPair]:
+        """Perform a inverse coordinate system transform.
+
+        Parameters
+        ----------
+        coords: list of tuple[float, float]
+
+        Returns
+        -------
+        list of tuple[float, float]
+        """
+        if (
+            isinstance(coords, tuple)
+            and all(isinstance(x, float) for x in coords)
+        ):
+            return self.transformer.inv(coords)
+
+        return list(zip(*self.transformer.inv(coords)))
+
+    @classmethod
+    def from_datum(
+        cls,
+        centroid: CoordPair,
+        length: float,
+        width: float,
+        major_axis_azimuth: float,
+    ) -> UTMOpArea:
+        """Generate an OpArea from a centroid, length, width, and axis azimuth.
+
+        Parameters
+        ----------
+        centroid: tuple[float, float]
+            Longitude and latitude coordinates of the bounding box centroid.
+        length: float
+            Length of the OpArea, in nautical miles.
+            This is the longer length compared to width.
+        width: float
+            Width of the OpArea, in nautical miles.
+            This is the shorter distance compared to length.
+        major_axis_azimuth: float
+            Azimuth of the OpArea major axis. This will be the azimuth of the
+            longest edges of the OpArea.
+
+        Returns
+        -------
+        OpArea
+        """
+        vertices = []
+        length *= NMI_2_M
+        width *= NMI_2_M
+
+        transformer = TMTransformer.from_lonlat(*centroid)
+        cx, cy = transformer.fwd(centroid)
+
+        dx = length / 2
+        dy = width / 2
+
+        major_axis_azimuth = 90 - major_axis_azimuth
+
+        ux = cos(major_axis_azimuth)
+        uy = sin(major_axis_azimuth)
+        vx = -sin(major_axis_azimuth)
+        vy = cos(major_axis_azimuth)
+
+        vertices = [
+            (cx + dx * ux + dy * vx, cy + dx * uy + dy * vy),
+            (cx - dx * ux + dy * vx, cy - dx * uy + dy * vy),
+            (cx - dx * ux - dy * vx, cy - dx * uy - dy * vy),
+            (cx + dx * ux - dy * vx, cy + dx * uy - dy * vy),
+        ]
+
+        return TMOpArea(vertices, major_axis_azimuth, transformer=transformer)
+
+
+class UTMOpArea(BaseOpArea):
+    """An OpArea subclass using universal transverse mercator projection."""
+
+    def __init__(
+        self,
+        coords: list[CoordPair],
+        major_axis: float,
+        utm_zone: UTMZone,
+        transform: bool = False,
+    ):
+        """Instantiate a new OpArea.
+
+        Parameters
+        ----------
+        coords: list of CoordPair
+            List of x- and y-coordinate pairs defining the extent of the
+            OpArea.
+        utm_zone: UTMZone
+            UTM zone used to project the coordinates to UTM.
+        """
+        self.utm_zone = utm_zone
+        super().__init__(coords, major_axis, transform)
+
+    @property
+    def convergence(self) -> float:
+        """Return the convergence angle."""
+        self.utm_zone.convergence
+
+    def transform_fwd(self, coords: list[CoordPair]) -> list[CoordPair]:
+        """Perform a forward coordinate system transform.
+
+        Parameters
+        ----------
+        coords: list of tuple[float, float]
+
+        Returns
+        -------
+        list of tuple[float, float]
+        """
+        return self.utm_zone.geodetic_to_utm(coords)
+
+    def transform_inv(self, coords: list[CoordPair]) -> list[CoordPair]:
+        """Perform a inverse coordinate system transform.
+
+        Parameters
+        ----------
+        coords: list of tuple[float, float]
+
+        Returns
+        -------
+        list of tuple[float, float]
+        """
+        return self.utm_zone.utm_to_geodetic(coords)
+
+    @classmethod
+    def from_datum(
+        cls,
+        centroid: CoordPair,
+        length: float,
+        width: float,
+        major_axis_azimuth: float,
+    ) -> UTMOpArea:
+        """Generate an OpArea from a centroid, length, width, and axis azimuth.
+
+        Parameters
+        ----------
+        centroid: tuple[float, float]
+            Longitude and latitude coordinates of the bounding box centroid.
+        length: float
+            Length of the OpArea, in nautical miles.
+            This is the longer length compared to width.
+        width: float
+            Width of the OpArea, in nautical miles.
+            This is the shorter distance compared to length.
+        major_axis_azimuth: float
+            Azimuth of the OpArea major axis. This will be the azimuth of the
+            longest edges of the OpArea.
+
+        Returns
+        -------
+        OpArea
+        """
+        vertices = []
+        length *= NMI_2_M
+        width *= NMI_2_M
+
+        utm_zone = UTMZone.from_lonlat(centroid)
+        cx, cy = utm_zone.geodetic_to_utm(centroid)
+
+        dx = length / 2
+        dy = width / 2
+
+        major_axis_azimuth = 90 - major_axis_azimuth + utm_zone.convergence
+
+        ux = cos(major_axis_azimuth)
+        uy = sin(major_axis_azimuth)
+        vx = -sin(major_axis_azimuth)
+        vy = cos(major_axis_azimuth)
+
+        vertices = [
+            (cx + dx * ux + dy * vx, cy + dx * uy + dy * vy),
+            (cx - dx * ux + dy * vx, cy - dx * uy + dy * vy),
+            (cx - dx * ux - dy * vx, cy - dx * uy - dy * vy),
+            (cx + dx * ux - dy * vx, cy + dx * uy - dy * vy),
+        ]
+
+        return UTMOpArea(vertices, major_axis_azimuth, utm_zone)

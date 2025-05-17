@@ -1,8 +1,9 @@
-"""Math functions for the Cartesian coordiante system."""
+"""Math functions for the Cartesian coordinate system."""
 import operator
 
 import numpy as np
 
+from mathlib import arctan2, cos, sin
 from util import round_return
 
 
@@ -86,7 +87,7 @@ def calc_azimuth(
     x1, y1 = point1
     x2, y2 = point2
 
-    return np.degrees(np.arctan2((x2-x1), (y2-y1)), dtype='f').item() % 360.
+    return arctan2((x2-x1), (y2-y1)).item() % 360.
 
 
 @round_return(2)
@@ -120,7 +121,7 @@ def calc_fwd(
     azimuth: float,
     dist: float,
 ) -> tuple[float, float]:
-    """Calculate the coordiantes of a new point given a starting point,
+    """Calculate the coordinates of a new point given a starting point,
     azimuth, and distance.
 
     Parameters
@@ -137,10 +138,9 @@ def calc_fwd(
     tuple of float, float
         X- and y-coodinates of the new point.
     """
-    r_azi = np.radians(azimuth_to_uangle(azimuth))
+    azimuth %= 360.
     x, y = origin
 
-    dx = dist * np.cos(r_azi).item()
-    dy = dist * np.sin(r_azi).item()
+    azimuth = 90 - azimuth
 
-    return x + dx, y + dy
+    return x + dist * cos(azimuth).item(), y + dist * sin(azimuth).item()
