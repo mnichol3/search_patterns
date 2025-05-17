@@ -6,7 +6,6 @@ from typing import TypeAlias
 import numpy as np
 
 from mathlib import arctan2, cos, sin
-from util import round_return
 
 
 Point: TypeAlias = tuple[float, float]
@@ -36,8 +35,8 @@ class FTP:
     track: float
 
     def __post_init__(self) -> None:
-        if self.track < 0:
-            self.track = 360 + self.track
+        self.track %= 360.
+
 
     @property
     def xy(self) -> tuple[float, float]:
@@ -57,6 +56,7 @@ class Circle:
         Y-coordinate of the center of the circle.
     s: int
         Direction of rotation about the circle.
+        1 for clockwise, -1 for counter-clockwise.
     """
     x: float
     y: float
@@ -76,11 +76,8 @@ class DubinsPath:
     >>> origin = FTP(0, 0, 270)
     >>> terminus = FTP(10, 10, 180)
     >>> radius = 3
-    >>> delta_d = 0.1
-    >>> turn = Turn.RIGHT
-    >>> dubins = DubinsPath(
-        origin, terminus, radius, turn, delta_psi=1, delta_d=delta_d)
-    >>> waypoints = dubins.waypoints
+    >>> dubins = DubinsPath(origin, terminus, radius, Turn.RIGHT)
+    >>> waypoints = dubins.construct_path(delta_psi=1, delta_d=0.1)
 
     Reference
     ---------
@@ -95,8 +92,6 @@ class DubinsPath:
         terminus: FTP,
         radius: float,
         turn: Turn,
-        delta_psi: float = 10,
-        delta_d: float = 10,
     ):
         """Instantiate a new DubinsPath.
 
@@ -108,17 +103,12 @@ class DubinsPath:
             Fly-to Point defining the end of the dubins path.
         radius: float
             Turn radius, in meters.
-        turns: list[TURN]
-            Turn directions.
-        delta_psi: float, optional
-            Interval at which to compute arc points, in degrees. Default is 10.
-        delta_d: float, optional
-            Interval at which to compute tangent line connecting the two
-            circles, in meters. Default is 10.
+        turns: Turn
+            Turn direction.
         """
+        self.origin = origin
+        self.terminus = terminus
         self.radius = radius
-        self.delta_psi = delta_psi
-        self.delta_d = delta_d
 
         self.circles = [
             self.calc_circle_center(x, radius, turn)
@@ -127,24 +117,67 @@ class DubinsPath:
         self.theta = self.calc_theta()
         self.d = self.calc_d()
         self.psi = origin.track
-        self.waypoints = [origin.xy]
-        self.compute_path(terminus.track)
 
-    def compute_path(self, psi_f: float) -> None:
-        """Construct the path.
+    def construct_path(
+        self,
+        delta_psi: float = 1,
+        delta_d: float = 10,
+    ) -> list[Point]:
+        """Construct a LSL or RSR path.
 
         Parameters
         ----------
-        psi_f: float
-            Final heading.
+        delta_psi: float, optional
+            Interval at which to compute arc points, in degrees. Default is 10.
+        delta_d: float, optional
+            Interval at which to compute tangent line connecting the two
+            circles, in meters. Default is 10.
 
         Returns
         -------
-        None.
+        list of Point
+            X- and y-coordinates of path waypoints.
         """
-        self.calc_arc_points(self.circles[0], self.theta)
-        self.calc_line_points()
-        self.calc_arc_points(self.circles[1], psi_f)
+        waypoints = []
+
+        waypoints.extend(
+            self.calc_arc_points(self.circles[0], self.theta, delta_psi))
+        waypoints.extend(self.calc_line_points(waypoints[-1], delta_d))
+        waypoints.extend(
+            self.calc_arc_points(
+                self.circles[1], self.terminus.track, delta_psi))
+
+        return waypoints
+
+    def construct_racetrack(
+        self,
+        delta_psi: float = 1,
+        delta_d: float = 10,
+    ) -> list[Point]:
+        """Construct a racetrack path.
+
+        Parameters
+        ----------
+        delta_psi: float, optional
+            Interval at which to compute arc points, in degrees. Default is 10.
+        delta_d: float, optional
+            Interval at which to compute tangent line connecting the two
+            circles, in meters. Default is 10.
+
+        Returns
+        -------
+        list of Point
+            X- and y-coordinates of path waypoints.
+        """
+        waypoints = self.construct_path(delta_psi=delta_psi, delta_d=delta_d)
+
+        self.theta = self._normalize_angle(self.theta + 180)
+        waypoints.extend(self.calc_line_points(waypoints[-1], delta_d))
+
+        # Closure
+        waypoints.append(self.origin.xy)
+
+        return waypoints
 
     def calc_circle_center(
         self,
@@ -173,7 +206,12 @@ class DubinsPath:
 
         return Circle(c_x, c_y, turn.value)
 
-    def calc_arc_points(self, circle: Point, psi_f: float) -> None:
+    def calc_arc_points(
+        self,
+        circle: Point,
+        psi_f: float,
+        delta_psi: float,
+    ) -> None:
         """Compute the points along an arc.
 
         Parameters
@@ -182,48 +220,61 @@ class DubinsPath:
             Circle to rotate about.
         psi_f: float
             Final heading.
+        delta_psi: float
+            Interval at which to compute arc points, in degrees.
 
         Returns
         -------
         None.
         """
-        if psi_f < self.psi:
-            psi_f += 360.
+        waypoints = []
 
-        while self.psi <= psi_f:
-            x_n = circle.x + (circle.s * self.radius * sin(self.psi - 90))
-            y_n = circle.y + (circle.s * self.radius * cos(self.psi - 90))
+        # TODO really dont like this condition, easy to skip over if
+        # values dont match exactly
+        while self.psi != psi_f:
+            psi = 90 - self.psi
 
-            self.waypoints.append((x_n, y_n))
+            x_n = circle.x - (circle.s * self.radius * sin(psi))
+            y_n = circle.y + (circle.s * self.radius * cos(psi))
 
-            self.psi += self.delta_psi
+            waypoints.append((x_n, y_n))
+            self.psi = self.psi + delta_psi * circle.s
 
-    def calc_line_points(self) -> None:
+            self.psi = self._normalize_angle(self.psi)
+
+        return waypoints
+
+    def calc_line_points(self, origin: Point, delta: float) -> list[Point]:
         """Compute points along the tangent line connecting the two circles.
 
         Parameters
         ----------
-        None.
+        origin: Point
+            origin x- and y-coordinate.
+        delta: float
+            Distance delta.
 
         Returns
         -------
-        None.
+        list of Point
         """
+        waypoints = []
         d_sum = 0
-        x_p, y_p = self.waypoints[-1]
+        x_p, y_p = origin
 
         while d_sum < self.d:
-            x_n = x_p + self.delta_d * sin(self.theta)
-            y_n = y_p + self.delta_d * cos(self.theta)
+            x_n = x_p + delta * sin(self.theta)
+            y_n = y_p + delta * cos(self.theta)
 
-            self.waypoints.append((x_n, y_n))
+            waypoints.append((x_n, y_n))
 
             x_p = x_n
             y_p = y_n
 
-            d_sum += self.delta_d
+            d_sum += delta
 
-    @round_return(4)
+        return waypoints
+
     def calc_d(self) -> float:
         """Calculate the length of the straight line segment d."""
         x_i, y_i = self.circles[0].xy
@@ -231,7 +282,6 @@ class DubinsPath:
 
         return np.sqrt((x_f - x_i)**2 + (y_f - y_i)**2)
 
-    @round_return(4)
     def calc_theta(self) -> float:
         """Calculate the angle of the straight line segment d measured from
         the vertical y-axis."""
@@ -240,62 +290,11 @@ class DubinsPath:
 
         return 90 - arctan2((y_f - y_i), (x_f - x_i))
 
-    @classmethod
-    def Left(
-        cls,
-        origin: FTP,
-        terminus: FTP,
-        radius: float,
-        **kwargs
-    ) -> list[Point]:
-        """Compute a LSL dubins path.
+    def _normalize_angle(self, val: float) -> float:
+        """Normalize an angle to [-180, 180]."""
+        if val > 180:
+            val -= 360
+        elif val < -180:
+            val += 360
 
-        Parameters
-        ----------
-        origin: FTP
-            Fly-to Point defining the beginning of the dubins path.
-        terminus: FTP
-            Fly-to Point defining the end of the dubins path.
-        radius: float
-            Turn radius, in meters.
-        kwargs: str
-            Keyword arguments to pass to DubinsPath constructor.
-
-        Returns
-        -------
-        list[Point]
-            X- and y-coordinate pairs defining the dubins path.
-        """
-        dubins = DubinsPath(origin, terminus, radius, Turn.LEFT, **kwargs)
-
-        return dubins.waypoints
-
-    @classmethod
-    def Right(
-        cls,
-        origin: FTP,
-        terminus: FTP,
-        radius: float,
-        **kwargs
-    ) -> list[Point]:
-        """Compute a RSR dubins path.
-
-        Parameters
-        ----------
-        origin: FTP
-            Fly-to Point defining the beginning of the dubins path.
-        terminus: FTP
-            Fly-to Point defining the end of the dubins path.
-        radius: float
-            Turn radius, in meters.
-        kwargs: str
-            Keyword arguments to pass to DubinsPath constructor.
-
-        Returns
-        -------
-        list[Point]
-            X- and y-coordinate pairs defining the dubins path.
-        """
-        dubins = DubinsPath(origin, terminus, radius, Turn.RIGHT,**kwargs)
-
-        return dubins.waypoints
+        return val
