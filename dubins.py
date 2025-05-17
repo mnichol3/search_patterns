@@ -6,6 +6,7 @@ from typing import TypeAlias
 import numpy as np
 
 from mathlib import arctan2, cos, sin
+from util import round_return
 
 
 Point: TypeAlias = tuple[float, float]
@@ -114,7 +115,7 @@ class DubinsPath:
             self.calc_circle_center(x, radius, turn)
             for x in [origin, terminus]]
 
-        self.theta = self.calc_theta()
+        self.theta = normalize_angle(self.calc_theta())
         self.psi = origin.track
 
     def construct_path(
@@ -283,6 +284,7 @@ class DubinsPath:
 
         return np.sqrt((x_f - x_i)**2 + (y_f - y_i)**2)
 
+    round_return(2)
     def calc_theta(self) -> float:
         """Calculate the angle of the straight line segment d measured from
         the vertical y-axis."""

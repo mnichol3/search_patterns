@@ -49,6 +49,8 @@ class Orbit(BaseSearchPattern):
         waypoints = []
         x, y = self.csp
 
+        inbd_crs = normalize_angle(inbd_crs)
+
         psi = 90 - inbd_crs
         psi_f = 90 - inbd_crs + (-turn_dir * delta_psi)
 
