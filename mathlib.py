@@ -50,3 +50,13 @@ def sech(vals: float | list[float]) -> float | npt.NDArray[np.float64]:
 def tan(vals: float | list[float]) -> float | npt.NDArray[np.float64]:
     """Compute the sin of the given values."""
     return np.tan(np.radians(vals))
+
+
+def normalize_angle(val: float) -> float:
+    """Normalize an angle to [-180, 180]."""
+    if val > 180:
+        val -= 360
+    elif val < -180:
+        val += 360
+
+    return val
