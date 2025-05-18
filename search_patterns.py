@@ -7,8 +7,10 @@ from pyproj import Geod
 from shapely import LineString, Polygon
 
 from cartesian import azimuth, calc_distance, calc_fwd
+from dubins import DubinsPath, Turn
 from mathlib import M_2_NMI
 from util import round_return
+from waypoint import Waypoint
 
 
 Point: TypeAlias = tuple[float, float]
@@ -52,7 +54,8 @@ class BaseSearchPattern:
 
         @round_return(2)
         def _geod_dist(p1: Point, p2: Point):
-            return geod.inv(*p1, *p2)[-1] * M_2_NMI
+            azi, _ , dist = geod.inv(*p1, *p2)
+            return azi, dist * M_2_NMI
 
         if len(self.waypoints) == 0:
             raise ValueError(f'Waypoints list is empty.')
@@ -60,11 +63,13 @@ class BaseSearchPattern:
         columns = [
             'lon',
             'lat',
+            'course',
             'distance',
             'cum_distance',
         ]
 
-        geod = None
+        rows = []
+
         dist_func = _eucl_dist
         waypoints = deepcopy(self.waypoints)
 
@@ -77,15 +82,15 @@ class BaseSearchPattern:
         cum_dist = 0
         prev_waypoint = waypoints[0]
 
-        waypoints[0] = list(prev_waypoint) + [leg_len, cum_dist]
+        rows.append(prev_waypoint + (-999, leg_len, cum_dist))
 
-        for i, waypoint in enumerate(waypoints[1:]):
-            leg_len = dist_func(prev_waypoint, waypoint)
+        for waypoint in waypoints[1:]:
+            crs, leg_len = dist_func(prev_waypoint, waypoint)
             cum_dist += leg_len
-            waypoints[i + 1] = list(waypoint) + [leg_len, cum_dist]
+            rows.append(waypoint + (crs, leg_len, cum_dist))
             prev_waypoint = waypoint
 
-        return pd.DataFrame(waypoints, columns=columns)
+        return pd.DataFrame(rows, columns=columns)
 
     def __repr__(self) -> str:
         """Return a string representation of the object."""
@@ -275,6 +280,7 @@ class ParallelTrackSearch(BaseSearchPattern):
         first_course: int,
         creep: float,
         track_spacing: float,
+        turn_radius: float | None = None,
     ) -> list[Point]:
         """Generate the parallel track search pattern.
 
@@ -313,9 +319,12 @@ class ParallelTrackSearch(BaseSearchPattern):
                 zip(*[x.tolist() for x in intersection.coords.xy]))
 
             if leg_num % 2 == 0:
-                waypoints.extend(leg_points)
+                waypoints.extend(
+                    [Waypoint(*x, first_course) for x in leg_points])
             else:
-                waypoints.extend(leg_points[::-1])
+                waypoints.extend(
+                    [Waypoint(*x, first_course + 180.)
+                     for x in leg_points][::-1])
 
             curr_pt = calc_fwd(curr_pt, creep, track_spacing)
             fwd_pt = calc_fwd(curr_pt, first_course, vector_len)
@@ -325,6 +334,55 @@ class ParallelTrackSearch(BaseSearchPattern):
 
             leg_num += 1
 
+        if turn_radius is not None:
+            turn = Turn.RIGHT if creep == 90 else Turn.LEFT
+            self.waypoints = self.add_turns(
+                waypoints, 300, turn, delta_d=10)
+        else:
+            self.waypoints = [x.xy for x in waypoints]
+
         self.waypoints = waypoints
 
-        return waypoints
+        return self.waypoints
+
+    def add_turns(
+        self,
+        waypoints: list[Waypoint],
+        radius: float,
+        turn: Turn,
+        **kwargs,
+    ) -> list[Point]:
+        """Add turns to a search pattern.
+
+        Parameters
+        ----------
+        waypoints: list[Waypoint]
+            Search pattern waypoints.
+        radius: float
+            Platform turn radius, in meters.
+        turn: Turn
+            First turn direction.
+
+        Returns
+        -------
+        list[Point]
+            X- and y-coordinates of search pattern waypoints with dubins
+            path turns connecting pattern legs.
+        """
+        new_waypoints = []
+
+        for i, origin in enumerate(waypoints):
+            new_waypoints.append(origin.xy)
+
+            if i % 2 != 0:
+                try:
+                    terminus = waypoints[i+1]
+                except IndexError:
+                    return new_waypoints
+
+                path = DubinsPath(origin, terminus, radius, turn)
+                new_waypoints.extend(path.construct_path(**kwargs))
+
+                turn = Turn.RIGHT if turn == Turn.LEFT else Turn.LEFT
+
+        return new_waypoints

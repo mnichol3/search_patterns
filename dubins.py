@@ -5,8 +5,9 @@ from typing import TypeAlias
 
 import numpy as np
 
-from mathlib import arctan2, cos, sin
+from mathlib import arctan2, cos, sin, normalize_angle
 from util import round_return
+from waypoint import Waypoint
 
 
 Point: TypeAlias = tuple[float, float]
@@ -16,33 +17,6 @@ class Turn(Enum):
     """Enum for turn direction."""
     LEFT = -1
     RIGHT = 1
-
-
-@dataclass
-class FTP:
-    """Container for fly-to point.
-
-    Parameters
-    ----------
-    x: float
-        Fly-to point x-coordinate.
-    y: float
-        Fly-to point y-coordinate.
-    track: float
-        Track upon reaching the fly-to point.
-    """
-    x: float
-    y: float
-    track: float
-
-    def __post_init__(self) -> None:
-        self.track = round(normalize_angle(self.track), 2)
-
-
-    @property
-    def xy(self) -> tuple[float, float]:
-        """Return the x- and y-coordinates."""
-        return self.x, self.y
 
 
 @dataclass
@@ -74,8 +48,8 @@ class DubinsPath:
 
     Example Usage
     -------------
-    >>> origin = FTP(0, 0, 270)
-    >>> terminus = FTP(10, 10, 180)
+    >>> origin = Waypoint(0, 0, 270)
+    >>> terminus = Waypoint(10, 10, 180)
     >>> radius = 3
     >>> dubins = DubinsPath(origin, terminus, radius, Turn.RIGHT)
     >>> waypoints = dubins.construct_path(delta_psi=1, delta_d=0.1)
@@ -89,8 +63,8 @@ class DubinsPath:
 
     def __init__(
         self,
-        origin: FTP,
-        terminus: FTP,
+        origin: Waypoint,
+        terminus: Waypoint,
         radius: float,
         turn: Turn,
     ):
@@ -98,9 +72,9 @@ class DubinsPath:
 
         Parameters
         ----------
-        origin: FTP
+        origin: Waypoint
             Fly-to Point defining the beginning of the dubins path.
-        terminus: FTP
+        terminus: Waypoint
             Fly-to Point defining the end of the dubins path.
         radius: float
             Turn radius, in meters.
@@ -111,12 +85,15 @@ class DubinsPath:
         self.terminus = terminus
         self.radius = radius
 
+        self.origin.normalize()
+        self.terminus.normalize()
+
         self.circles = [
             self.calc_circle_center(x, radius, turn)
             for x in [origin, terminus]]
 
         self.theta = normalize_angle(self.calc_theta())
-        self.psi = origin.track
+        self.psi = origin.crs
 
     def construct_path(
         self,
@@ -145,7 +122,7 @@ class DubinsPath:
         waypoints.extend(self.calc_line_points(waypoints[-1], delta_d))
         waypoints.extend(
             self.calc_arc_points(
-                self.circles[1], self.terminus.track, delta_psi))
+                self.circles[1], self.terminus.crs, delta_psi))
 
         return waypoints
 
@@ -181,7 +158,7 @@ class DubinsPath:
 
     def calc_circle_center(
         self,
-        ftp: FTP,
+        ftp: Waypoint,
         radius: float,
         turn: Turn,
     ) -> Circle:
@@ -189,7 +166,7 @@ class DubinsPath:
 
         Parameters
         ----------
-        ftp: FTP
+        ftp: Waypoint
             Fly-to point defining the beginning or end of a turn.
         radius: float
             Turn radius.
@@ -201,8 +178,8 @@ class DubinsPath:
         Circle
             Computed circle.
         """
-        c_x = round(ftp.x + (turn.value * radius * cos(ftp.track)), 8)
-        c_y = round(ftp.y + (-turn.value * radius * sin(ftp.track)), 8)
+        c_x = round(ftp.x + (turn.value * radius * cos(ftp.crs)), 8)
+        c_y = round(ftp.y + (-turn.value * radius * sin(ftp.crs)), 8)
 
         return Circle(c_x, c_y, turn.value)
 
@@ -292,13 +269,3 @@ class DubinsPath:
         x_f, y_f = self.circles[1].xy
 
         return 90 - arctan2((y_f - y_i), (x_f - x_i))
-
-
-def normalize_angle(val: float) -> float:
-    """Normalize an angle to [-180, 180]."""
-    if val > 180:
-        val -= 360
-    elif val < -180:
-        val += 360
-
-    return val

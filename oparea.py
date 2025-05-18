@@ -162,6 +162,7 @@ class BaseOpArea(ABC):
         unit_id: str,
         axis: str = 'major',
         first_course: float | None = None,
+        turn_radius: float | None = None,
     ) -> any:
         """Construct a parallel track search pattern.
 
@@ -215,7 +216,10 @@ class BaseOpArea(ABC):
         if first_course is None:
             first_course = _get_leg_course()
 
-        search.run(first_course, (first_course + creep) % 360., track_spacing)
+        search.run(
+            first_course, (first_course + creep) % 360., track_spacing,
+            turn_radius=turn_radius)
+
         self.patterns[unit_id] = search.to_dataframe(self.transform_inv)
 
     def generate_sector_search(
@@ -507,13 +511,7 @@ class TMOpArea(BaseOpArea):
         -------
         list of tuple[float, float]
         """
-        if (
-            isinstance(coords, tuple)
-            and all(isinstance(x, float) for x in coords)
-        ):
-            return self.transformer.fwd(coords)
-
-        return list(zip(*self.transformer.fwd(coords)))
+        return self.transformer.fwd(coords)
 
     def transform_inv(self, coords: list[CoordPair]) -> list[CoordPair]:
         """Perform a inverse coordinate system transform.
@@ -526,13 +524,7 @@ class TMOpArea(BaseOpArea):
         -------
         list of tuple[float, float]
         """
-        if (
-            isinstance(coords, tuple)
-            and all(isinstance(x, float) for x in coords)
-        ):
-            return self.transformer.inv(coords)
-
-        return list(zip(*self.transformer.inv(coords)))
+        return self.transformer.inv(coords)
 
     @classmethod
     def from_datum(

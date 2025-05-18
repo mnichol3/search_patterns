@@ -2,9 +2,10 @@
 from typing import TypeAlias
 
 from cartesian import calc_fwd
-from dubins import DubinsPath, FTP, Turn, normalize_angle
+from dubins import DubinsPath, Turn, normalize_angle
 from mathlib import cos, sin
 from search_patterns import BaseSearchPattern
+from waypoint import Waypoint
 
 
 Point: TypeAlias = tuple[float, float]
@@ -115,8 +116,8 @@ class Racetrack(BaseSearchPattern):
         -------
         list of tuple[float, float]
         """
-        origin = FTP(*self.csp, course)
-        terminus = FTP(
+        origin = Waypoint(*self.csp, course)
+        terminus = Waypoint(
             *calc_fwd(self.csp, course + 180., d), course)
 
         path = DubinsPath(
