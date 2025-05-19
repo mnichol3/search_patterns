@@ -341,8 +341,6 @@ class ParallelTrackSearch(BaseSearchPattern):
         else:
             self.waypoints = [x.xy for x in waypoints]
 
-        self.waypoints = waypoints
-
         return self.waypoints
 
     def add_turns(
