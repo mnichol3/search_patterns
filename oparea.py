@@ -207,8 +207,6 @@ class BaseOpArea(ABC):
             else:
                 return edge.back_azimuth
 
-        track_spacing *= NMI_2_M
-
         start_vert, _ = self.get_nearest_vertex(self.transform_fwd(csp))
 
         search = ParallelTrackSearch(self.polygon, start_vert.coords)
@@ -217,8 +215,8 @@ class BaseOpArea(ABC):
             first_course = _get_leg_course()
 
         search.run(
-            first_course, (first_course + creep) % 360., track_spacing,
-            turn_radius=turn_radius)
+            first_course, creep, track_spacing*NMI_2_M,
+            turn_radius=turn_radius*NMI_2_M)
 
         self.patterns[unit_id] = search.to_dataframe(self.transform_inv)
 
