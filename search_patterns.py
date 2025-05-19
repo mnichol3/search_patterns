@@ -304,10 +304,11 @@ class ParallelTrackSearch(BaseSearchPattern):
         waypoints = []
         vector_len = int(self.poly.length / 2)
         leg_num = 0
+        true_creep = (first_course + creep) % 360.
 
         # Step inside and backwards to get 2 intersection points with the
         # polygon
-        curr_pt = calc_fwd(self.csp, creep, track_spacing / 2)
+        curr_pt = calc_fwd(self.csp, true_creep, track_spacing / 2)
         curr_pt = calc_fwd(
             curr_pt, _turn(first_course, -180), track_spacing / 2)
 
@@ -326,7 +327,7 @@ class ParallelTrackSearch(BaseSearchPattern):
                     [Waypoint(*x, first_course + 180.)
                      for x in leg_points][::-1])
 
-            curr_pt = calc_fwd(curr_pt, creep, track_spacing)
+            curr_pt = calc_fwd(curr_pt, true_creep, track_spacing)
             fwd_pt = calc_fwd(curr_pt, first_course, vector_len)
 
             intersection = self.poly.intersection(
@@ -337,7 +338,7 @@ class ParallelTrackSearch(BaseSearchPattern):
         if turn_radius is not None:
             turn = Turn.RIGHT if creep == 90 else Turn.LEFT
             self.waypoints = self.add_turns(
-                waypoints, 300, turn, delta_d=10)
+                waypoints, turn_radius, turn, delta_d=10)
         else:
             self.waypoints = [x.xy for x in waypoints]
 
