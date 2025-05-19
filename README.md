@@ -26,7 +26,3 @@ oparea.to_kml(
 )
 ```
 ![Resulting parallel-track search pattern](https://github.com/mnichol3/search_patterns/blob/master/etc/example-01.jpg)
-
-
-## Requirments
-TODO
