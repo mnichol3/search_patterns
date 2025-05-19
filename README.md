@@ -1,5 +1,13 @@
 This Python module constructs parallel-track and sector search patterns.
 
+## Requirements
+* Python >= 3.11
+* NumPy
+* Pandas
+* PyPROJ
+* Shapely
+* [UTM](https://pypi.org/project/utm/)
+
 ## Usage
 ```python
 from oparea import OpArea
