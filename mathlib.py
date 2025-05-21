@@ -6,6 +6,12 @@ NMI_2_M = 1852
 M_2_NMI = round(1 / NMI_2_M, 8)
 
 
+def arccos(vals: float | list[float]) -> float | npt.NDArray[np.float64]:
+    """Compute the trigonometric inverse cosine and return the value
+    in degrees."""
+    return np.degrees(np.arccos(vals))
+
+
 def arcsin(vals: float | list[float]) -> float | npt.NDArray[np.float64]:
     """Compute the trigonometric inverse sine and return the value
     in degrees."""
@@ -33,7 +39,7 @@ def cos(vals: float | list[float]) -> float | npt.NDArray[np.float64]:
 
 
 def sin(vals: float | list[float]) -> float | npt.NDArray[np.float64]:
-    """Compute the sin of the given values."""
+    """Compute the sine of the given values."""
     return np.sin(np.radians(vals))
 
 
@@ -48,7 +54,7 @@ def sech(vals: float | list[float]) -> float | npt.NDArray[np.float64]:
 
 
 def tan(vals: float | list[float]) -> float | npt.NDArray[np.float64]:
-    """Compute the sin of the given values."""
+    """Compute the tangent of the given values."""
     return np.tan(np.radians(vals))
 
 
@@ -56,7 +62,7 @@ def normalize_angle(val: float) -> float:
     """Normalize an angle to [-180, 180]."""
     if val > 180:
         val -= 360
-    elif val < -180:
+    elif val <= -180:
         val += 360
 
     return val
