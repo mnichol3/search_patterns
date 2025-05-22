@@ -201,7 +201,13 @@ class DubinsCSC(DubinsBase):
 
         self.theta = normalize_angle(self._calc_theta())
         self.psi = origin.crs
+        self.d = self._calc_d()
         self.path_type = PathType.from_turns(turns)
+
+    @property
+    def size(self) -> tuple[float, float]:
+        """Return the size of the path in the x- and y-axis."""
+        return self.d + (2 * self.radius), float(self.radius)
 
     def construct_path(
         self,
@@ -318,7 +324,7 @@ class DubinsCSC(DubinsBase):
         waypoints = []
         d_sum = 0
         x_p, y_p = origin
-        d_max = self._calc_d() - (delta / 2) # prevent overrun
+        d_max = self.d - (delta / 2) # prevent overrun
 
         while d_sum < d_max:
             x_n = x_p + delta * sin(self.theta)
@@ -386,7 +392,7 @@ class DubinsLoopback(DubinsBase):
         super().__init__(origin, terminus, radius, turns)
 
         turn1 = Turn.reverse(turns[0])
-        track_spacing = calc_distance(self.origin.xy, self.terminus.xy)
+        track_spacing = self.origin.distance_to(self.terminus)
         h = np.sqrt((2 * radius)**2 - track_spacing**2)
         a = round(arccos(h / (2 * radius)), 4) + origin.crs
 
@@ -402,6 +408,17 @@ class DubinsLoopback(DubinsBase):
             circle1,
             Circle(*calc_fwd(circle1.xy, a, self.radius*2), turns[1].value),
         ]
+
+    @property
+    def size(self) -> tuple[float, float]:
+        """Return the size of the path in the x- and y-axis."""
+        dist = self.origin.distance_to(self.terminus)
+        s_y = self.d + self.radius
+
+        if self.radius < dist:
+            return (2 * self.radius) - dist, s_y
+
+        return self.radius + dist, s_y
 
     def construct_path(self, delta_psi: float = 1) -> list[Point]:
         """Construct a LSL or RSR path.

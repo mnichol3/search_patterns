@@ -1,5 +1,7 @@
+from __future__ import annotations
 from dataclasses import dataclass
 
+from cartesian import calc_distance
 from mathlib import normalize_angle
 
 
@@ -19,6 +21,10 @@ class Waypoint:
     def xy(self) -> tuple[float, float]:
         """Return the x- and y-coordinates."""
         return self.x, self.y
+
+    def distance_to(self, wpt: Waypoint) -> float:
+        """Compute the Euclidean distance to another waypoint."""
+        return calc_distance(self.xy, wpt.xy)
 
     def normalize(self) -> None:
         """Normalize the course to [-180, 180]."""
