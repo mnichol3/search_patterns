@@ -10,7 +10,6 @@ import numpy as np
 from shapely import Geometry, Point, Polygon, STRtree
 
 from cartesian import calc_azimuth, get_min_azimuth_diff
-from dubins import DubinsPath
 from edge import Edge
 from mathlib import cos, sin, NMI_2_M
 from search_patterns import ExpandingSquare, ParallelTrackSearch, SectorSearch
@@ -214,9 +213,13 @@ class BaseOpArea(ABC):
         if first_course is None:
             first_course = _get_leg_course()
 
-        search.run(
-            first_course, creep, track_spacing*NMI_2_M,
-            turn_radius=turn_radius*NMI_2_M)
+        if turn_radius is not None:
+            turn_radius *= NMI_2_M
+        elif turn_radius == 0:
+            turn_radius = None
+
+        search.run(first_course, creep, track_spacing*NMI_2_M,
+                   turn_radius=turn_radius)
 
         self.patterns[unit_id] = search.to_dataframe(self.transform_inv)
 

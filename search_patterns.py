@@ -7,7 +7,7 @@ from pyproj import Geod
 from shapely import LineString, Polygon
 
 from cartesian import azimuth, calc_distance, calc_fwd
-from dubins import DubinsPath, Turn
+from dubins import create_path, Turn
 from mathlib import M_2_NMI
 from util import round_return
 from waypoint import Waypoint
@@ -304,10 +304,11 @@ class ParallelTrackSearch(BaseSearchPattern):
         waypoints = []
         vector_len = int(self.poly.length / 2)
         leg_num = 0
-        true_creep = (first_course + creep) % 360.
 
         # Step inside and backwards to get 2 intersection points with the
         # polygon
+        true_creep = (first_course + creep) % 360.
+
         curr_pt = calc_fwd(self.csp, true_creep, track_spacing / 2)
         curr_pt = calc_fwd(
             curr_pt, _turn(first_course, -180), track_spacing / 2)
@@ -335,10 +336,13 @@ class ParallelTrackSearch(BaseSearchPattern):
 
             leg_num += 1
 
+        for x in waypoints:
+            print(x.xy)
+
         if turn_radius is not None:
-            turn = Turn.RIGHT if creep == 90 else Turn.LEFT
+            turns = [Turn.RIGHT]*2 if creep == 90 else [Turn.LEFT]*2
             self.waypoints = self.add_turns(
-                waypoints, turn_radius, turn, delta_d=10)
+                waypoints, turn_radius, turns, delta_d=10)
         else:
             self.waypoints = [x.xy for x in waypoints]
 
@@ -348,7 +352,7 @@ class ParallelTrackSearch(BaseSearchPattern):
         self,
         waypoints: list[Waypoint],
         radius: float,
-        turn: Turn,
+        turns: list[Turn],
         **kwargs,
     ) -> list[Point]:
         """Add turns to a search pattern.
@@ -379,9 +383,9 @@ class ParallelTrackSearch(BaseSearchPattern):
                 except IndexError:
                     return new_waypoints
 
-                path = DubinsPath(origin, terminus, radius, turn)
-                new_waypoints.extend(path.construct_path(**kwargs))
+                new_waypoints.extend(
+                    create_path(origin, terminus, radius, turns, **kwargs))
 
-                turn = Turn.RIGHT if turn == Turn.LEFT else Turn.LEFT
+                turns = [Turn.reverse(x) for x in turns]
 
         return new_waypoints
