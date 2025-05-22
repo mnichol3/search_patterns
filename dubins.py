@@ -1,11 +1,12 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
+from itertools import pairwise
 from typing import TypeAlias
 
 import numpy as np
 
-from cartesian import calc_fwd
+from cartesian import calc_distance, calc_fwd
 from mathlib import arccos, arctan2, cos, sin, normalize_angle
 from util import round_return
 from waypoint import Waypoint
@@ -524,3 +525,19 @@ def create_path(
         kwargs.pop('delta_d', None)
 
     return path.construct_path(**kwargs)
+
+
+def calc_path_length(path: list[Point]) -> float:
+    """Calculate the length of a Dubins path.
+
+    Parameters
+    ----------
+    path: list of tuple[float, float]
+        Computed Dubins path.
+
+    Returns
+    -------
+    float
+        Unitless length of the given path.
+    """
+    return round(sum([calc_distance(*x) for x in pairwise(path)]), 4)
