@@ -5,7 +5,7 @@ from typing import TypeAlias
 
 import numpy as np
 
-from cartesian import calc_distance, calc_fwd
+from cartesian import calc_fwd
 from mathlib import arccos, arctan2, cos, sin, normalize_angle
 from util import round_return
 from waypoint import Waypoint
@@ -517,7 +517,7 @@ def create_path(
     list of tuple[float, float]
         Dubins path waypoint x- and y-coordinates.
     """
-    if calc_distance(origin.xy, terminus.xy) >= 2 * radius:
+    if origin.distance_to(terminus) >= 2 * radius:
         path = DubinsCSC(origin, terminus, radius, turns)
     else:
         path = DubinsLoopback(origin, terminus, radius, turns)
