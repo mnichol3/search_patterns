@@ -343,14 +343,12 @@ class DubinsCSC(DubinsBase):
     @round_return(4)
     def _calc_d(self) -> float:
         """Calculate the length of the straight line segment d."""
-        x_i, y_i = self.circles[0].xy
-        x_f, y_f = self.circles[1].xy
+        d = self.circles[0].distance_to(self.circles[1])
 
         if self.path_type in [PathType.LSR, PathType.RSL]:
-            lam = calc_distance(self.circles[0].xy, self.circles[1].xy)
-            return np.sqrt(lam**2 - 4 * self.radius**2)
+            return np.sqrt(d**2 - 4 * self.radius**2)
 
-        return np.sqrt((x_f - x_i)**2 + (y_f - y_i)**2)
+        return d
 
     @round_return(2)
     def _calc_theta(self) -> float:
@@ -390,7 +388,7 @@ class DubinsCSC(DubinsBase):
     ) -> float:
         """Calculate theta for an RSL path."""
         eta = 90 - arctan2((y_f - y_i), (x_f - x_i))
-        gamma = arccos((2 * self.radius) /self.d)
+        gamma = arccos((2 * self.radius) / self.d)
 
         return eta - gamma + 90
 
