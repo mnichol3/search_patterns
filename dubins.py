@@ -1,15 +1,16 @@
 from __future__ import annotations
-from dataclasses import dataclass
 from enum import Enum
 from itertools import pairwise
 from typing import TypeAlias
 
+import pdb # TODO remove
+
 import numpy as np
 
 from cartesian import calc_distance, calc_fwd
-from mathlib import arccos, arctan2, cos, sin, normalize_angle
+from mathlib import arccos, arctan, arctan2, cos, sin, normalize_angle
+from point import Circle, Waypoint
 from util import round_return
-from waypoint import Waypoint
 
 
 Point: TypeAlias = tuple[float, float]
@@ -36,14 +37,37 @@ class PathType(Enum):
     def from_turns(cls, turns: list[Turn]) -> PathType:
         """Get the PathType from a list of Turns.
 
-        Note: only returns LSL or RSR.
+        Note: does not handle loopback case.
+
+        Parameters
+        ----------
+        turns: list of Turn
+            Prescribed turns.
+
+        Returns
+        -------
+        PathType
+
+        Raises
+        ------
+        ValueError
+            If an invalid combination of turns are passed in the `turns` param.
         """
+        ttype = None
         t1, t2 = turns
 
-        if t1 != t2:
-            raise ValueError('LSR and RSL paths are not supported.')
+        if t1 == t2 == Turn.RIGHT:
+            ttype = cls.RSR
+        elif t1 == t2 == Turn.LEFT:
+            ttype = cls.LSL
+        elif t1 == Turn.RIGHT and t2 == Turn.LEFT:
+            ttype = cls.RSL
+        elif t1 == Turn.LEFT and t2 == Turn.RIGHT:
+            ttype = cls.LSR
+        else:
+            raise ValueError(f'Invalid turn combination: {turns}')
 
-        return cls.RSR if t1 == t2 == Turn.RIGHT else cls.LSL
+        return ttype
 
 
 class Turn(Enum):
@@ -59,30 +83,6 @@ class Turn(Enum):
                 f'turn parameter must be of type Turn, got {type(turn)}')
 
         return Turn.RIGHT if turn == Turn.LEFT else Turn.LEFT
-
-
-@dataclass
-class Circle:
-    """Container for circle parameters.
-
-    Parameters
-    ----------
-    x: float
-        X-coordinate of the center of the circle.
-    y: float
-        Y-coordinate of the center of the circle.
-    s: int
-        Direction of rotation about the circle.
-        1 for clockwise, -1 for counter-clockwise.
-    """
-    x: float
-    y: float
-    s: int
-
-    @property
-    def xy(self) -> Point:
-        """Return the x- and y-coordinates."""
-        return self.x, self.y
 
 
 class DubinsBase:
@@ -112,10 +112,10 @@ class DubinsBase:
             raise ValueError(
                 f'"turns" parameter must have length of 2, got {len(turns)}')
 
-        if turns[0] != turns[1]:
-            raise ValueError(
-                'Only Right-Straight-Right and Left-Straight-Left paths'
-                ' are currently supported.')
+        # if turns[0] != turns[1]:
+        #     raise ValueError(
+        #         'Only Right-Straight-Right and Left-Straight-Left paths'
+        #         ' are currently supported.')
 
         self.origin = origin
         self.origin.normalize()
@@ -196,14 +196,16 @@ class DubinsCSC(DubinsBase):
         """
         super().__init__(origin, terminus, radius, turns)
 
+        self.path_type = PathType.from_turns(turns)
+
         self.circles = [
             self._calc_circle_center(x, radius, turn)
             for (x, turn) in zip([origin, terminus], turns)]
 
+        self.d = self._calc_d()
         self.theta = normalize_angle(self._calc_theta())
         self.psi = origin.crs
-        self.d = self._calc_d()
-        self.path_type = PathType.from_turns(turns)
+        pdb.set_trace()
 
     @property
     def size(self) -> tuple[float, float]:
@@ -300,10 +302,10 @@ class DubinsCSC(DubinsBase):
         while abs(self.psi - psi_f) > delta_psi:
             psi = 90 - self.psi
 
-            x_n = circle.x - (circle.s * self.radius * sin(psi))
-            y_n = circle.y + (circle.s * self.radius * cos(psi))
-
-            waypoints.append((x_n, y_n))
+            waypoints.append((
+                circle.x - (circle.s * self.radius * sin(psi)),
+                circle.y + (circle.s * self.radius * cos(psi)),
+            ))
             self.psi = normalize_angle(self.psi + delta_psi * circle.s)
 
         return waypoints
@@ -338,10 +340,15 @@ class DubinsCSC(DubinsBase):
 
         return waypoints
 
+    @round_return(4)
     def _calc_d(self) -> float:
         """Calculate the length of the straight line segment d."""
         x_i, y_i = self.circles[0].xy
         x_f, y_f = self.circles[1].xy
+
+        if self.path_type in [PathType.LSR, PathType.RSL]:
+            lam = calc_distance(self.circles[0].xy, self.circles[1].xy)
+            return np.sqrt(lam**2 - 4 * self.radius**2)
 
         return np.sqrt((x_f - x_i)**2 + (y_f - y_i)**2)
 
@@ -352,7 +359,41 @@ class DubinsCSC(DubinsBase):
         x_i, y_i = self.circles[0].xy
         x_f, y_f = self.circles[1].xy
 
+        if self.path_type == PathType.LSR:
+            return self._calc_theta_lsr(x_i, y_i, x_f, y_f)
+        elif self.path_type == PathType.RSL:
+            return self._calc_theta_rsl(x_i, y_i, x_f, y_f)
+
         return 90 - arctan2((y_f - y_i), (x_f - x_i))
+
+    @round_return(2)
+    def _calc_theta_lsr(
+        self,
+        x_i: float,
+        y_i: float,
+        x_f: float,
+        y_f: float,
+    ) -> float:
+        """Calculate theta for an LSR path."""
+        eta = 90 + arctan2((y_f - y_i), (x_f - x_i))
+        gamma = arccos((2 * self.radius) / self.d)
+
+        return eta + gamma - 90
+
+    @round_return(2)
+    def _calc_theta_rsl(
+        self,
+        x_i: float,
+        y_i: float,
+        x_f: float,
+        y_f: float,
+    ) -> float:
+        """Calculate theta for an RSL path."""
+        eta = 90 - arctan2((y_f - y_i), (x_f - x_i))
+        gamma = arccos((2 * self.radius) /self.d)
+
+        return eta - gamma + 90
+
 
 
 class DubinsLoopback(DubinsBase):
@@ -446,7 +487,8 @@ class DubinsLoopback(DubinsBase):
 
         waypoints.extend(
             self._calc_arc_points(
-                self.circles[1], (self.terminus.crs - 90) * self.circles[1].s,
+                self.circles[1],
+                normalize_angle(self.terminus.crs - (90 * self.circles[1].s)),
                 delta_psi))
 
         waypoints.append(calc_fwd(waypoints[-1], self.terminus.crs, self.d))
@@ -477,6 +519,7 @@ class DubinsLoopback(DubinsBase):
         waypoints = []
         psi_f = round(psi_f, 2)
 
+        #import pdb; pdb.set_trace()
         while abs(self.psi - psi_f) > delta_psi:
             waypoints.append((
                 circle.x + (self.radius * sin(self.psi)),
